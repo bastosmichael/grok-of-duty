@@ -111,7 +111,7 @@ function Index() {
             <a href="#ops" className="hover:text-primary transition-colors">Ops</a>
           </nav>
           <button
-            onClick={() => setDialogOpen(true)}
+            onClick={launch}
             className="hidden md:inline-flex items-center gap-2 border border-primary/60 px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary hover:bg-primary hover:text-primary-foreground transition-colors clip-tactical"
           >
             Deploy ▸
@@ -158,7 +158,7 @@ function Index() {
             </p>
 
             <div className="mt-10 flex flex-wrap items-center gap-4">
-              <button onClick={() => setDialogOpen(true)} className="btn-tactical animate-pulse-glow text-base">
+              <button onClick={launch} className="btn-tactical animate-pulse-glow text-base">
                 ▶ Play Now
               </button>
               <a href="#roadmap" className="inline-flex items-center gap-3 border border-border px-6 py-4 text-xs font-bold uppercase tracking-widest text-foreground hover:border-primary hover:text-primary transition-colors clip-tactical">
@@ -256,7 +256,7 @@ function Index() {
             Grok Of Duty is entering closed alpha. Deploy now to secure your callsign and receive first access when servers go live.
           </p>
           <div className="mt-10">
-            <button onClick={() => setDialogOpen(true)} className="btn-tactical text-base">
+            <button onClick={launch} className="btn-tactical text-base">
               ▶ Enlist &amp; Play
             </button>
           </div>
