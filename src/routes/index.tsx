@@ -1,6 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
+import { ClientOnly } from "@tanstack/react-router";
 import heroImg from "@/assets/hero.jpg";
+
+const WebGLCube = lazy(() => import("@/components/WebGLCube"));
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -87,6 +90,11 @@ function Index() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <ClientOnly fallback={null}>
+        <Suspense fallback={null}>
+          <WebGLCube />
+        </Suspense>
+      </ClientOnly>
       {/* NAV */}
       <header className="fixed top-0 z-50 w-full border-b border-border/60 bg-background/70 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
