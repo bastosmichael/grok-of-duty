@@ -90,6 +90,11 @@ function Index() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <ClientOnly fallback={null}>
+        <Suspense fallback={null}>
+          <WebGLCube />
+        </Suspense>
+      </ClientOnly>
       {/* NAV */}
       <header className="fixed top-0 z-50 w-full border-b border-border/60 bg-background/70 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
