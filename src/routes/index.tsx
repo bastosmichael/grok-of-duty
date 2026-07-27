@@ -4,6 +4,7 @@ import { ClientOnly } from "@tanstack/react-router";
 import heroImg from "@/assets/hero.jpg";
 
 const WebGLCube = lazy(() => import("@/components/WebGLCube"));
+const GameScene = lazy(() => import("@/components/GameScene"));
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -87,6 +88,8 @@ const features = [
 
 function Index() {
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [gameOpen, setGameOpen] = useState(false);
+  const launch = () => setGameOpen(true);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -108,7 +111,7 @@ function Index() {
             <a href="#ops" className="hover:text-primary transition-colors">Ops</a>
           </nav>
           <button
-            onClick={() => setDialogOpen(true)}
+            onClick={launch}
             className="hidden md:inline-flex items-center gap-2 border border-primary/60 px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary hover:bg-primary hover:text-primary-foreground transition-colors clip-tactical"
           >
             Deploy ▸
@@ -155,7 +158,7 @@ function Index() {
             </p>
 
             <div className="mt-10 flex flex-wrap items-center gap-4">
-              <button onClick={() => setDialogOpen(true)} className="btn-tactical animate-pulse-glow text-base">
+              <button onClick={launch} className="btn-tactical animate-pulse-glow text-base">
                 ▶ Play Now
               </button>
               <a href="#roadmap" className="inline-flex items-center gap-3 border border-border px-6 py-4 text-xs font-bold uppercase tracking-widest text-foreground hover:border-primary hover:text-primary transition-colors clip-tactical">
@@ -253,7 +256,7 @@ function Index() {
             Grok Of Duty is entering closed alpha. Deploy now to secure your callsign and receive first access when servers go live.
           </p>
           <div className="mt-10">
-            <button onClick={() => setDialogOpen(true)} className="btn-tactical text-base">
+            <button onClick={launch} className="btn-tactical text-base">
               ▶ Enlist &amp; Play
             </button>
           </div>
@@ -278,18 +281,10 @@ function Index() {
             className="relative max-w-md border border-primary/50 bg-card p-8 shadow-[var(--shadow-elegant)]"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="absolute left-0 top-0 h-3 w-3 border-l-2 border-t-2 border-primary" />
-            <div className="absolute right-0 top-0 h-3 w-3 border-r-2 border-t-2 border-primary" />
-            <div className="absolute bottom-0 left-0 h-3 w-3 border-b-2 border-l-2 border-primary" />
-            <div className="absolute bottom-0 right-0 h-3 w-3 border-b-2 border-r-2 border-primary" />
-
             <div className="text-xs font-mono uppercase tracking-[0.3em] text-primary">// TRANSMISSION</div>
             <h3 className="mt-3 font-[Orbitron] text-2xl font-black uppercase">Servers Warming Up</h3>
             <p className="mt-4 text-sm text-muted-foreground">
-              The 3D combat engine is currently in closed alpha. The playable client will drop into this browser tab in the next deployment phase.
-            </p>
-            <p className="mt-3 text-sm text-muted-foreground">
-              Check the <a href="#roadmap" onClick={() => setDialogOpen(false)} className="text-primary underline underline-offset-4">roadmap</a> for launch windows.
+              Multiplayer servers are in closed alpha. Check the <a href="#roadmap" onClick={() => setDialogOpen(false)} className="text-primary underline underline-offset-4">roadmap</a> for launch windows.
             </p>
             <button
               onClick={() => setDialogOpen(false)}
@@ -300,6 +295,30 @@ function Index() {
           </div>
         </div>
       )}
+
+      {/* 3D Game Scene — only loads when user clicks a play button */}
+      {gameOpen && (
+        <ClientOnly fallback={<GameLoading />}>
+          <Suspense fallback={<GameLoading />}>
+            <GameScene onExit={() => setGameOpen(false)} />
+          </Suspense>
+        </ClientOnly>
+      )}
+    </div>
+  );
+}
+
+function GameLoading() {
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-background">
+      <div className="text-center">
+        <div className="font-[Orbitron] text-2xl font-black uppercase tracking-widest text-primary animate-pulse">
+          Deploying Engine
+        </div>
+        <div className="mt-3 text-xs font-mono uppercase tracking-[0.3em] text-muted-foreground">
+          // Loading WebGL runtime
+        </div>
+      </div>
     </div>
   );
 }
