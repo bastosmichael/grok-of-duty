@@ -281,18 +281,10 @@ function Index() {
             className="relative max-w-md border border-primary/50 bg-card p-8 shadow-[var(--shadow-elegant)]"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="absolute left-0 top-0 h-3 w-3 border-l-2 border-t-2 border-primary" />
-            <div className="absolute right-0 top-0 h-3 w-3 border-r-2 border-t-2 border-primary" />
-            <div className="absolute bottom-0 left-0 h-3 w-3 border-b-2 border-l-2 border-primary" />
-            <div className="absolute bottom-0 right-0 h-3 w-3 border-b-2 border-r-2 border-primary" />
-
             <div className="text-xs font-mono uppercase tracking-[0.3em] text-primary">// TRANSMISSION</div>
             <h3 className="mt-3 font-[Orbitron] text-2xl font-black uppercase">Servers Warming Up</h3>
             <p className="mt-4 text-sm text-muted-foreground">
-              The 3D combat engine is currently in closed alpha. The playable client will drop into this browser tab in the next deployment phase.
-            </p>
-            <p className="mt-3 text-sm text-muted-foreground">
-              Check the <a href="#roadmap" onClick={() => setDialogOpen(false)} className="text-primary underline underline-offset-4">roadmap</a> for launch windows.
+              Multiplayer servers are in closed alpha. Check the <a href="#roadmap" onClick={() => setDialogOpen(false)} className="text-primary underline underline-offset-4">roadmap</a> for launch windows.
             </p>
             <button
               onClick={() => setDialogOpen(false)}
@@ -303,6 +295,30 @@ function Index() {
           </div>
         </div>
       )}
+
+      {/* 3D Game Scene — only loads when user clicks a play button */}
+      {gameOpen && (
+        <ClientOnly fallback={<GameLoading />}>
+          <Suspense fallback={<GameLoading />}>
+            <GameScene onExit={() => setGameOpen(false)} />
+          </Suspense>
+        </ClientOnly>
+      )}
+    </div>
+  );
+}
+
+function GameLoading() {
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-background">
+      <div className="text-center">
+        <div className="font-[Orbitron] text-2xl font-black uppercase tracking-widest text-primary animate-pulse">
+          Deploying Engine
+        </div>
+        <div className="mt-3 text-xs font-mono uppercase tracking-[0.3em] text-muted-foreground">
+          // Loading WebGL runtime
+        </div>
+      </div>
     </div>
   );
 }
