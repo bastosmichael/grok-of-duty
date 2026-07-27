@@ -321,12 +321,20 @@ export default function GameScene({ onExit }: Props) {
               <div><span className="text-primary">ESC</span> Release</div>
               <div><span className="text-primary">EXFIL</span> Quit</div>
             </div>
-            <button
-              onClick={() => mountRef.current?.querySelector("canvas")?.requestPointerLock()}
-              className="btn-tactical mt-6 w-full"
-            >
-              ▶ Engage
-            </button>
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <button
+                onClick={() => mountRef.current?.querySelector("canvas")?.requestPointerLock()}
+                className="btn-tactical w-full"
+              >
+                ▶ Engage
+              </button>
+              <button
+                onClick={onExit}
+                className="border border-destructive/60 bg-background/70 px-3 py-2 text-xs font-bold uppercase tracking-widest text-destructive backdrop-blur hover:bg-destructive hover:text-destructive-foreground"
+              >
+                ✕ Exfil
+              </button>
+            </div>
           </div>
         </div>
       )}
