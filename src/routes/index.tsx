@@ -117,9 +117,9 @@ function Index() {
       </header>
 
       {/* HERO */}
-      <section id="top" className="relative min-h-screen overflow-hidden">
-        <div className="absolute inset-0">
-          <img src={heroImg} alt="Grok Of Duty warzone" width={1920} height={1088} className="h-full w-full object-cover opacity-70" />
+      <section id="top" className="relative min-h-screen overflow-hidden pt-16">
+        <div className="absolute inset-x-0 bottom-0 top-16">
+          <img src={heroImg} alt="Grok Of Duty warzone" width={1920} height={1088} className="h-full w-full object-cover object-[center_30%] opacity-70" />
           <div className="absolute inset-0" style={{ background: "var(--gradient-hero)" }} />
           <div className="absolute inset-0 grid-lines opacity-40" />
           <div className="absolute inset-0 scanline opacity-30 pointer-events-none" />
