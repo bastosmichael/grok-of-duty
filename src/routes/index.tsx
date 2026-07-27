@@ -1,6 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
+import { ClientOnly } from "@tanstack/react-router";
 import heroImg from "@/assets/hero.jpg";
+
+const WebGLCube = lazy(() => import("@/components/WebGLCube"));
 
 export const Route = createFileRoute("/")({
   component: Index,
