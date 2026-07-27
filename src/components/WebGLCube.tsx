@@ -1,11 +1,34 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * Full-page WebGL placeholder: a rotating wireframe cube.
- * Vanilla WebGL, no dependencies. Client-only.
+ * Respects prefers-reduced-motion and exposes a manual pause toggle.
  */
 export default function WebGLCube() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [prefersReduced, setPrefersReduced] = useState(false);
+  const [userPaused, setUserPaused] = useState<boolean | null>(null);
+
+  // Track OS-level reduced motion preference
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setPrefersReduced(mq.matches);
+    update();
+    mq.addEventListener?.("change", update);
+    return () => mq.removeEventListener?.("change", update);
+  }, []);
+
+  // Load persisted user override
+  useEffect(() => {
+    const stored = localStorage.getItem("god:motion");
+    if (stored === "paused") setUserPaused(true);
+    else if (stored === "playing") setUserPaused(false);
+  }, []);
+
+  // Effective paused state: user override wins, otherwise follow OS
+  const paused = userPaused ?? prefersReduced;
+  const pausedRef = useRef(paused);
+  useEffect(() => { pausedRef.current = paused; }, [paused]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -22,7 +45,6 @@ export default function WebGLCube() {
     resize();
     window.addEventListener("resize", resize);
 
-    // Shaders
     const vs = `
       attribute vec3 aPos;
       uniform mat4 uMVP;
@@ -45,7 +67,6 @@ export default function WebGLCube() {
     gl.linkProgram(prog);
     gl.useProgram(prog);
 
-    // Cube vertices
     const verts = new Float32Array([
       -1,-1,-1,  1,-1,-1,  1, 1,-1, -1, 1,-1,
       -1,-1, 1,  1,-1, 1,  1, 1, 1, -1, 1, 1,
@@ -68,10 +89,8 @@ export default function WebGLCube() {
     gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
     const uMVP = gl.getUniformLocation(prog, "uMVP");
     const uColor = gl.getUniformLocation(prog, "uColor");
-    // tactical orange
     gl.uniform3f(uColor, 0.98, 0.55, 0.15);
 
-    // Matrix helpers
     const mul = (a: number[], b: number[]) => {
       const r = new Array(16).fill(0);
       for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++)
@@ -95,8 +114,8 @@ export default function WebGLCube() {
 
     let raf = 0;
     let t = 0;
-    const render = () => {
-      t += 0.008;
+    let lastTs = performance.now();
+    const drawFrame = () => {
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
       const aspect = canvas.width / canvas.height;
@@ -107,9 +126,18 @@ export default function WebGLCube() {
       gl.uniformMatrix4fv(uMVP, false, new Float32Array(mvp));
       gl.lineWidth(1);
       gl.drawElements(gl.LINES, edges.length, gl.UNSIGNED_SHORT, 0);
+    };
+    const render = (ts: number) => {
+      const dt = (ts - lastTs) / 1000;
+      lastTs = ts;
+      if (!pausedRef.current) {
+        t += dt * 0.5;
+        drawFrame();
+      }
       raf = requestAnimationFrame(render);
     };
-    render();
+    drawFrame(); // initial static frame
+    raf = requestAnimationFrame(render);
 
     return () => {
       cancelAnimationFrame(raf);
@@ -117,11 +145,29 @@ export default function WebGLCube() {
     };
   }, []);
 
+  const toggle = () => {
+    const next = !paused;
+    setUserPaused(next);
+    localStorage.setItem("god:motion", next ? "paused" : "playing");
+  };
+
   return (
-    <canvas
-      ref={canvasRef}
-      className="pointer-events-none fixed inset-0 h-full w-full opacity-40 mix-blend-screen"
-      aria-hidden="true"
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        className="pointer-events-none fixed inset-0 h-full w-full opacity-40 mix-blend-screen"
+        aria-hidden="true"
+      />
+      <button
+        type="button"
+        onClick={toggle}
+        aria-pressed={paused}
+        aria-label={paused ? "Resume background motion" : "Pause background motion"}
+        title={paused ? "Motion paused" : "Motion active"}
+        className="fixed bottom-4 right-4 z-50 border border-primary/60 bg-background/70 px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-widest text-primary backdrop-blur hover:bg-primary hover:text-primary-foreground transition-colors clip-tactical"
+      >
+        {paused ? "▶ Motion Off" : "❚❚ Motion On"}
+      </button>
+    </>
   );
 }
