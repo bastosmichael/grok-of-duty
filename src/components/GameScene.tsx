@@ -303,7 +303,7 @@ export default function GameScene({ onExit }: Props) {
           onClick={onExit}
           className="pointer-events-auto absolute right-4 top-16 border border-primary/60 bg-background/70 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-primary backdrop-blur hover:bg-primary hover:text-primary-foreground"
         >
-          ✕ Exfil
+          ✕ Quit
         </button>
       </div>
 
