@@ -4,6 +4,7 @@ import { ClientOnly } from "@tanstack/react-router";
 import heroImg from "@/assets/hero.jpg";
 
 const WebGLCube = lazy(() => import("@/components/WebGLCube"));
+const GameScene = lazy(() => import("@/components/GameScene"));
 
 export const Route = createFileRoute("/")({
   component: Index,
