@@ -88,6 +88,8 @@ const features = [
 
 function Index() {
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [gameOpen, setGameOpen] = useState(false);
+  const launch = () => setGameOpen(true);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
