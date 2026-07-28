@@ -171,9 +171,9 @@ function material(
 
 function createMaterials(variant: number): MaterialPack {
   const palette = [
-    { uniform: 0x34382f, secondary: 0x292d27, armor: 0x252a25, webbing: 0x4a4434 },
-    { uniform: 0x373932, secondary: 0x262a28, armor: 0x30332e, webbing: 0x514a39 },
-    { uniform: 0x2e3432, secondary: 0x252b2c, armor: 0x282d2c, webbing: 0x45483d },
+    { uniform: 0x454b3f, secondary: 0x343a33, armor: 0x303730, webbing: 0x5c5541 },
+    { uniform: 0x494b42, secondary: 0x333936, armor: 0x3b3f39, webbing: 0x625a45 },
+    { uniform: 0x3d4643, secondary: 0x303838, armor: 0x343b39, webbing: 0x575a4c },
   ][variant % 3]!;
   const skinTones = [0x8b604a, 0x6d4938, 0xb17b5b, 0x56382f];
 
@@ -241,11 +241,7 @@ function markHitZone(mesh: THREE.Mesh, zone: EnemyHitZone, multiplier: number): 
  * built along local -Y, so both gloves stay physically attached to their
  * rifle contacts instead of merely approximating a two-hand hold.
  */
-function solveArmIK(
-  rig: EnemyModelRig,
-  side: "left" | "right",
-  target: THREE.Vector3,
-): void {
+function solveArmIK(rig: EnemyModelRig, side: "left" | "right", target: THREE.Vector3): void {
   const shoulder = side === "left" ? rig.leftShoulder : rig.rightShoulder;
   const elbow = side === "left" ? rig.leftElbow : rig.rightElbow;
   const sideSign = side === "left" ? -1 : 1;
@@ -263,14 +259,11 @@ function solveArmIK(
     upperLength + lowerLength - 0.001,
   );
   const along =
-    (upperLength * upperLength - lowerLength * lowerLength + distance * distance) /
-    (2 * distance);
+    (upperLength * upperLength - lowerLength * lowerLength + distance * distance) / (2 * distance);
   const bendDistance = Math.sqrt(Math.max(0, upperLength * upperLength - along * along));
 
   // Elbows bias out and slightly down, matching a compact shouldered stance.
-  _armBend
-    .set(sideSign, -0.28, -0.12)
-    .addScaledVector(_armDirection, -_armBend.dot(_armDirection));
+  _armBend.set(sideSign, -0.28, -0.12).addScaledVector(_armDirection, -_armBend.dot(_armDirection));
   if (_armBend.lengthSq() < 1e-5) _armBend.set(sideSign, 0, 0);
   _armBend.normalize();
 
@@ -290,7 +283,7 @@ function solveArmIK(
 function solveWeaponGrip(rig: EnemyModelRig): void {
   rig.weapon.updateMatrix();
 
-  _armTarget.set(0.02, 0, 0.38).applyMatrix4(rig.weapon.matrix);
+  _armTarget.set(0.02, 0, 0.31).applyMatrix4(rig.weapon.matrix);
   solveArmIK(rig, "left", _armTarget);
 
   _armTarget.set(0.04, -0.02, 0.1).applyMatrix4(rig.weapon.matrix);
@@ -469,7 +462,7 @@ export function createEnemyModel(variant = 0): EnemyModel {
     mat.balaclava,
     [0, 0.07, 0],
     [0, 0, 0],
-    [0.88, 1.18, 0.92],
+    [0.96, 1.2, 1],
     "head",
     2,
   );
@@ -480,9 +473,40 @@ export function createEnemyModel(variant = 0): EnemyModel {
     mat.skin,
     [0, 0.064, 0.055],
     [0, 0, 0],
-    [0.72, 0.9, 0.64],
+    [0.8, 0.95, 0.72],
     "head",
     2,
+  );
+  add(
+    head,
+    "operator_jaw",
+    geometry.face,
+    mat.balaclava,
+    [0, 0.005, 0.045],
+    [0, 0, 0],
+    [0.66, 0.5, 0.62],
+    "head",
+    2,
+  );
+  add(
+    head,
+    "operator_nose",
+    geometry.face,
+    mat.skin,
+    [0, 0.065, 0.14],
+    [0, 0, 0],
+    [0.16, 0.3, 0.26],
+    "head",
+    2,
+  );
+  add(
+    head,
+    "ballistic_eye_protection",
+    geometry.patch,
+    mat.opticGlass,
+    [0, 0.092, 0.145],
+    [0, 0, 0],
+    [2.25, 0.9, 1],
   );
   add(
     head,
@@ -491,7 +515,7 @@ export function createEnemyModel(variant = 0): EnemyModel {
     mat.helmet,
     [0, 0.11, -0.006],
     [0, 0, 0],
-    [1.06, 0.97, 1.08],
+    [1.12, 1.02, 1.12],
     "head",
     1.65,
   );
@@ -659,6 +683,17 @@ export function createEnemyModel(variant = 0): EnemyModel {
   const leftElbow = createPivot("rig_left_elbow", leftShoulder, 0, -0.33, 0);
   add(
     leftElbow,
+    "left_elbow_pad",
+    geometry.knee,
+    mat.armor,
+    [0, 0, 0.045],
+    [0, 0, 0],
+    [0.68, 0.55, 0.5],
+    "arm",
+    0.68,
+  );
+  add(
+    leftElbow,
     "left_forearm",
     geometry.forearm,
     mat.uniformSecondary,
@@ -707,6 +742,17 @@ export function createEnemyModel(variant = 0): EnemyModel {
   const rightElbow = createPivot("rig_right_elbow", rightShoulder, 0, -0.33, 0);
   add(
     rightElbow,
+    "right_elbow_pad",
+    geometry.knee,
+    mat.armor,
+    [0, 0, 0.045],
+    [0, 0, 0],
+    [0.68, 0.55, 0.5],
+    "arm",
+    0.68,
+  );
+  add(
+    rightElbow,
     "right_forearm",
     geometry.forearm,
     mat.uniformSecondary,
@@ -731,14 +777,15 @@ export function createEnemyModel(variant = 0): EnemyModel {
 
   // Weapon axis is +Z. The stock terminates at the shoulder and the foregrip
   // crosses the left support hand, keeping all three contacts visually joined.
-  const weapon = createPivot("rig_weapon", chest, 0, 0.27, 0.13);
+  const weapon = createPivot("rig_weapon", chest, 0, 0.27, 0.2);
   add(
     weapon,
     "rifle_stock",
     geometry.rifleStock,
     mat.gunPolymer,
-    [0.07, -0.02, -0.115],
+    [0.13, -0.02, -0.06],
     [0.08, 0, 0],
+    [1, 1, 0.45],
   );
   add(weapon, "rifle_receiver", geometry.rifleReceiver, mat.metal, [0.04, 0, 0.16], [0.04, 0, 0]);
   add(
@@ -875,7 +922,7 @@ export function poseEnemyModel(rig: EnemyModelRig, pose: EnemyPose): void {
   const recoil = THREE.MathUtils.clamp(pose.recoil ?? 0, 0, 1);
   const flinch = THREE.MathUtils.clamp(pose.flinch ?? 0, 0, 1);
   const flinchYaw = pose.flinchYaw ?? 0;
-  const stride = Math.sin(pose.gaitPhase) * 0.47 * move;
+  const stride = Math.sin(pose.gaitPhase) * 0.54 * move;
   const leftLift = Math.max(0, Math.sin(pose.gaitPhase)) * move;
   const rightLift = Math.max(0, -Math.sin(pose.gaitPhase)) * move;
   const weightShift = Math.sin(pose.gaitPhase) * 0.018 * move;
@@ -884,7 +931,7 @@ export function poseEnemyModel(rig: EnemyModelRig, pose: EnemyPose): void {
     weightShift,
     // Compensate the articulated leg arc so at least one boot remains planted
     // instead of both feet hovering at the middle of every stride.
-    0.915 - Math.abs(Math.sin(pose.gaitPhase)) * 0.047 * move,
+    0.915 - Math.abs(Math.sin(pose.gaitPhase)) * 0.049 * move,
     0,
   );
   rig.centerOfMass.rotation.set(0, 0, -weightShift * 0.8);
@@ -897,11 +944,11 @@ export function poseEnemyModel(rig: EnemyModelRig, pose: EnemyPose): void {
   rig.head.rotation.set(0.015 - flinch * 0.04, -stride * 0.025, 0);
 
   rig.leftHip.rotation.set(stride, 0, 0.015);
-  rig.leftKnee.rotation.set(-leftLift * 0.43, 0, 0);
-  rig.leftFoot.rotation.set(-stride + leftLift * 0.43, 0, -0.015);
+  rig.leftKnee.rotation.set(-(leftLift * 0.62 + rightLift * 0.1), 0, 0);
+  rig.leftFoot.rotation.set(-stride + leftLift * 0.54 + rightLift * 0.08, 0, -0.015);
   rig.rightHip.rotation.set(-stride, 0, -0.015);
-  rig.rightKnee.rotation.set(-rightLift * 0.43, 0, 0);
-  rig.rightFoot.rotation.set(stride + rightLift * 0.43, 0, 0.015);
+  rig.rightKnee.rotation.set(-(rightLift * 0.62 + leftLift * 0.1), 0, 0);
+  rig.rightFoot.rotation.set(stride + rightLift * 0.54 + leftLift * 0.08, 0, 0.015);
 
   const relaxed = 1 - aim;
   rig.weapon.rotation.set(-0.035 - recoil * 0.055 + relaxed * 0.16, recoil * 0.012, 0);
@@ -916,57 +963,26 @@ export function poseEnemyModel(rig: EnemyModelRig, pose: EnemyPose): void {
 export function poseEnemyDeath(rig: EnemyModelRig, progress: number, fallSide: -1 | 1): void {
   const t = THREE.MathUtils.smoothstep(THREE.MathUtils.clamp(progress, 0, 1), 0, 1);
   resetEnemyModelPose(rig);
-  const leftShoulderStartX = rig.leftShoulder.rotation.x;
-  const leftShoulderStartY = rig.leftShoulder.rotation.y;
-  const leftShoulderStartZ = rig.leftShoulder.rotation.z;
-  const leftElbowStartX = rig.leftElbow.rotation.x;
-  const leftElbowStartY = rig.leftElbow.rotation.y;
-  const leftElbowStartZ = rig.leftElbow.rotation.z;
-  const rightShoulderStartX = rig.rightShoulder.rotation.x;
-  const rightShoulderStartY = rig.rightShoulder.rotation.y;
-  const rightShoulderStartZ = rig.rightShoulder.rotation.z;
-  const rightElbowStartX = rig.rightElbow.rotation.x;
-  const rightElbowStartY = rig.rightElbow.rotation.y;
-  const rightElbowStartZ = rig.rightElbow.rotation.z;
 
-  rig.centerOfMass.position.set(fallSide * 0.055 * t, 0.915 - 0.31 * t, 0.035 * t);
-  rig.centerOfMass.rotation.set(0.04 * t, 0, fallSide * 0.16 * t);
-  rig.pelvis.rotation.set(0.18 * t, -fallSide * 0.12 * t, fallSide * 0.08 * t);
-  rig.chest.rotation.set(0.28 * t, fallSide * 0.16 * t, fallSide * 0.52 * t);
-  rig.head.rotation.set(-0.12 * t, -fallSide * 0.18 * t, -fallSide * 0.22 * t);
+  // A supported knees-first buckle keeps the center of mass over a credible
+  // base instead of hinging a rigid body sideways from planted feet.
+  rig.centerOfMass.position.set(0, 0.915 - 0.45 * t, 0.045 * t);
+  rig.centerOfMass.rotation.set(0.02 * t, 0, 0);
+  rig.pelvis.rotation.set(0.18 * t, -fallSide * 0.045 * t, 0);
+  rig.chest.rotation.set(0.58 * t, fallSide * 0.08 * t, 0);
+  rig.head.rotation.set(-0.22 * t, -fallSide * 0.1 * t, 0);
 
-  rig.leftHip.rotation.set(0.62 * t, 0, 0.06 * t);
-  rig.leftKnee.rotation.set(-1.08 * t, 0, 0);
-  rig.leftFoot.rotation.set(0.46 * t, 0, -0.04 * t);
-  rig.rightHip.rotation.set(0.78 * t, 0, -0.06 * t);
-  rig.rightKnee.rotation.set(-1.26 * t, 0, 0);
-  rig.rightFoot.rotation.set(0.48 * t, 0, 0.04 * t);
+  rig.leftHip.rotation.set(0.92 * t, 0, 0.04 * t);
+  rig.leftKnee.rotation.set(-1.58 * t, 0, 0);
+  rig.leftFoot.rotation.set(0.66 * t, 0, -0.03 * t);
+  rig.rightHip.rotation.set(0.96 * t, 0, -0.04 * t);
+  rig.rightKnee.rotation.set(-1.64 * t, 0, 0);
+  rig.rightFoot.rotation.set(0.68 * t, 0, 0.03 * t);
 
-  rig.leftShoulder.rotation.set(
-    THREE.MathUtils.lerp(leftShoulderStartX, -0.52, t),
-    THREE.MathUtils.lerp(leftShoulderStartY, -0.15, t),
-    THREE.MathUtils.lerp(leftShoulderStartZ, -0.38, t),
-  );
-  rig.leftElbow.rotation.set(
-    THREE.MathUtils.lerp(leftElbowStartX, -0.2, t),
-    THREE.MathUtils.lerp(leftElbowStartY, -0.08, t),
-    THREE.MathUtils.lerp(leftElbowStartZ, 0.2, t),
-  );
-  rig.rightShoulder.rotation.set(
-    THREE.MathUtils.lerp(rightShoulderStartX, -0.4, t),
-    THREE.MathUtils.lerp(rightShoulderStartY, 0.1, t),
-    THREE.MathUtils.lerp(rightShoulderStartZ, 0.44, t),
-  );
-  rig.rightElbow.rotation.set(
-    THREE.MathUtils.lerp(rightElbowStartX, -0.24, t),
-    THREE.MathUtils.lerp(rightElbowStartY, 0.12, t),
-    THREE.MathUtils.lerp(rightElbowStartZ, -0.2, t),
-  );
-  rig.weapon.rotation.set(
-    THREE.MathUtils.lerp(-0.035, 0.14, t),
-    fallSide * 0.12 * t,
-    fallSide * 0.2 * t,
-  );
+  // Both hands retain authored contacts as the muzzle drops. This avoids the
+  // floating-rifle and rigid flung-arm artifacts of a purely Euler fall.
+  rig.weapon.rotation.set(THREE.MathUtils.lerp(-0.035, 0.48, t), fallSide * 0.025 * t, 0);
+  solveWeaponGrip(rig);
 
   rig.root.updateMatrixWorld(true);
   _poseBounds.setFromObject(rig.root);

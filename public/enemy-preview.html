@@ -124,12 +124,10 @@
       dying.root.position.x = 2.35;
       scene.add(idle.root, moving.root, dying.root);
 
-      const startedAt = Date.now();
       const bounds = new THREE.Box3();
       const readout = document.querySelector("#readout");
 
       function animate() {
-        const elapsed = (Date.now() - startedAt) / 1000;
         poseEnemyModel(idle.rig, {
           gaitPhase: 0,
           locomotion: 0,
@@ -138,13 +136,13 @@
           flinch: 0,
         });
         poseEnemyModel(moving.rig, {
-          gaitPhase: elapsed * 5.2,
+          gaitPhase: 1.05,
           locomotion: 1,
           aim: 1,
-          recoil: Math.max(0, Math.sin(elapsed * 3.5) - 0.94) * 14,
+          recoil: 0,
           flinch: 0,
         });
-        poseEnemyDeath(dying.rig, Math.min(1, (elapsed % 4.2) / 1.55), 1);
+        poseEnemyDeath(dying.rig, 1, 1);
 
         const models = [idle, moving, dying];
         let floorMinimum = Infinity;

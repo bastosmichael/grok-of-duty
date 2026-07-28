@@ -20,12 +20,26 @@ function expectGroundSafe(root: THREE.Object3D): void {
   expect(bounds.min.y).toBeGreaterThanOrEqual(-FLOOR_TOLERANCE);
 }
 
+function expectWeaponContact(model: ReturnType<typeof createEnemyModel>): void {
+  model.root.updateMatrixWorld(true);
+  const leftHand = new THREE.Vector3();
+  const rightHand = new THREE.Vector3();
+  model.rig.leftHand.getWorldPosition(leftHand);
+  model.rig.rightHand.getWorldPosition(rightHand);
+  const handguard = model.rig.weapon.localToWorld(new THREE.Vector3(0.02, 0, 0.31));
+  const pistolGrip = model.rig.weapon.localToWorld(new THREE.Vector3(0.04, -0.02, 0.1));
+
+  expect(leftHand.distanceTo(handguard)).toBeLessThan(1e-5);
+  expect(rightHand.distanceTo(pistolGrip)).toBeLessThan(1e-5);
+}
+
 describe("enemy articulated model contact", () => {
   test("neutral and full gait poses keep the rendered operator above ground", () => {
     const model = createEnemyModel(1);
     try {
       resetEnemyModelPose(model.rig);
       expectGroundSafe(model.root);
+      expectWeaponContact(model);
 
       for (let i = 0; i <= 64; i++) {
         poseEnemyModel(model.rig, {
@@ -37,6 +51,7 @@ describe("enemy articulated model contact", () => {
           flinchYaw: (i / 64) * Math.PI * 2,
         });
         expectGroundSafe(model.root);
+        expectWeaponContact(model);
       }
     } finally {
       model.dispose();
