@@ -105,6 +105,14 @@ function Index() {
   const [gameOpen, setGameOpen] = useState(false);
   const launch = () => setGameOpen(true);
 
+  // Ads are unmounted while the scene is open; the body flag also hides any
+  // AdSense anchor/vignette overlay that Google injects outside our tree.
+  useEffect(() => {
+    document.body.classList.toggle("game-active", gameOpen);
+    return () => document.body.classList.remove("game-active");
+  }, [gameOpen]);
+
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <ClientOnly fallback={null}>
