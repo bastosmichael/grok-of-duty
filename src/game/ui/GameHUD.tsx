@@ -5,7 +5,10 @@ interface GameHUDProps {
   state: GameHudState;
   onExit: () => void;
   onEngage: () => void;
+  /** Touch device: swap pointer-lock copy for on-screen control copy. */
+  touch?: boolean;
 }
+
 
 function clamp01(n: number): number {
   return Math.max(0, Math.min(1, n));
