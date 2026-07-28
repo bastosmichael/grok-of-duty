@@ -356,7 +356,18 @@ export function createPlayer(opts: {
     time += t;
     emptyClickCd = Math.max(0, emptyClickCd - t);
 
-    locked = document.pointerLockElement === canvas;
+    locked = touchMode ? touchActive : document.pointerLockElement === canvas;
+
+    // Touch look deltas behave like accumulated mouse movement.
+    if (touchMode && locked && (touchLookDx !== 0 || touchLookDy !== 0)) {
+      mouseDx += touchLookDx;
+      mouseDy += touchLookDy;
+      euler.y -= touchLookDx * TOUCH_LOOK_SENS;
+      euler.x -= touchLookDy * TOUCH_LOOK_SENS;
+      euler.x = Math.max(-PI_2 + 0.01, Math.min(PI_2 - 0.01, euler.x));
+    }
+    touchLookDx = 0;
+    touchLookDy = 0;
 
     const localStrafeSpeed = velocity.x * Math.cos(euler.y) + velocity.z * -Math.sin(euler.y);
     const targetRoll = grounded
