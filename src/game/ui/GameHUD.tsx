@@ -10,7 +10,6 @@ interface GameHUDProps {
   touch?: boolean;
 }
 
-
 function clamp01(n: number): number {
   return Math.max(0, Math.min(1, n));
 }
@@ -430,7 +429,6 @@ export function GameHUD({ state, onExit, onEngage, touch = false }: GameHUDProps
           ESC · RELEASE CURSOR
         </button>
       )}
-
 
       {/* Player vitals */}
       <section

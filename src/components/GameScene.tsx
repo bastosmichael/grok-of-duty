@@ -385,12 +385,7 @@ export default function GameScene({ onExit }: Props) {
         <LoadingScreen progress={hud.loadProgress} label={hud.loadLabel} />
       ) : (
         <>
-          <GameHUD
-            state={hud}
-            onExit={handleExit}
-            onEngage={handleEngage}
-            touch={touchMode}
-          />
+          <GameHUD state={hud} onExit={handleExit} onEngage={handleEngage} touch={touchMode} />
           {touchMode && hud.ready && hud.locked && (
             <TouchControls
               onMove={touchMove}

@@ -273,7 +273,6 @@ export function createPlayer(opts: {
     },
   };
 
-
   const onMouseDown = (e: MouseEvent): void => {
     if (document.pointerLockElement !== canvas) {
       if (e.button === 0) tryRequestLock();
@@ -400,7 +399,9 @@ export function createPlayer(opts: {
     const touchForward = touchMode ? -touchMoveY : 0;
     const sprinting =
       locked &&
-      (touchMode ? touchSprint && touchForward > 0.55 : !!keys["KeyW"] && (keys["ShiftLeft"] || keys["ShiftRight"])) &&
+      (touchMode
+        ? touchSprint && touchForward > 0.55
+        : !!keys["KeyW"] && (keys["ShiftLeft"] || keys["ShiftRight"])) &&
       !crouching &&
       !adsHeld;
     const ads = locked && adsHeld && !sprinting;
