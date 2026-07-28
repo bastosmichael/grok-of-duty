@@ -916,10 +916,18 @@ export function poseEnemyModel(rig: EnemyModelRig, pose: EnemyPose): void {
 export function poseEnemyDeath(rig: EnemyModelRig, progress: number, fallSide: -1 | 1): void {
   const t = THREE.MathUtils.smoothstep(THREE.MathUtils.clamp(progress, 0, 1), 0, 1);
   resetEnemyModelPose(rig);
-  const leftShoulderStart = rig.leftShoulder.rotation.clone();
-  const leftElbowStart = rig.leftElbow.rotation.clone();
-  const rightShoulderStart = rig.rightShoulder.rotation.clone();
-  const rightElbowStart = rig.rightElbow.rotation.clone();
+  const leftShoulderStartX = rig.leftShoulder.rotation.x;
+  const leftShoulderStartY = rig.leftShoulder.rotation.y;
+  const leftShoulderStartZ = rig.leftShoulder.rotation.z;
+  const leftElbowStartX = rig.leftElbow.rotation.x;
+  const leftElbowStartY = rig.leftElbow.rotation.y;
+  const leftElbowStartZ = rig.leftElbow.rotation.z;
+  const rightShoulderStartX = rig.rightShoulder.rotation.x;
+  const rightShoulderStartY = rig.rightShoulder.rotation.y;
+  const rightShoulderStartZ = rig.rightShoulder.rotation.z;
+  const rightElbowStartX = rig.rightElbow.rotation.x;
+  const rightElbowStartY = rig.rightElbow.rotation.y;
+  const rightElbowStartZ = rig.rightElbow.rotation.z;
 
   rig.centerOfMass.position.set(fallSide * 0.055 * t, 0.915 - 0.31 * t, 0.035 * t);
   rig.centerOfMass.rotation.set(0.04 * t, 0, fallSide * 0.16 * t);
@@ -935,24 +943,24 @@ export function poseEnemyDeath(rig: EnemyModelRig, progress: number, fallSide: -
   rig.rightFoot.rotation.set(0.48 * t, 0, 0.04 * t);
 
   rig.leftShoulder.rotation.set(
-    THREE.MathUtils.lerp(leftShoulderStart.x, -0.52, t),
-    THREE.MathUtils.lerp(leftShoulderStart.y, -0.15, t),
-    THREE.MathUtils.lerp(leftShoulderStart.z, -0.38, t),
+    THREE.MathUtils.lerp(leftShoulderStartX, -0.52, t),
+    THREE.MathUtils.lerp(leftShoulderStartY, -0.15, t),
+    THREE.MathUtils.lerp(leftShoulderStartZ, -0.38, t),
   );
   rig.leftElbow.rotation.set(
-    THREE.MathUtils.lerp(leftElbowStart.x, -0.2, t),
-    THREE.MathUtils.lerp(leftElbowStart.y, -0.08, t),
-    THREE.MathUtils.lerp(leftElbowStart.z, 0.2, t),
+    THREE.MathUtils.lerp(leftElbowStartX, -0.2, t),
+    THREE.MathUtils.lerp(leftElbowStartY, -0.08, t),
+    THREE.MathUtils.lerp(leftElbowStartZ, 0.2, t),
   );
   rig.rightShoulder.rotation.set(
-    THREE.MathUtils.lerp(rightShoulderStart.x, -0.4, t),
-    THREE.MathUtils.lerp(rightShoulderStart.y, 0.1, t),
-    THREE.MathUtils.lerp(rightShoulderStart.z, 0.44, t),
+    THREE.MathUtils.lerp(rightShoulderStartX, -0.4, t),
+    THREE.MathUtils.lerp(rightShoulderStartY, 0.1, t),
+    THREE.MathUtils.lerp(rightShoulderStartZ, 0.44, t),
   );
   rig.rightElbow.rotation.set(
-    THREE.MathUtils.lerp(rightElbowStart.x, -0.24, t),
-    THREE.MathUtils.lerp(rightElbowStart.y, 0.12, t),
-    THREE.MathUtils.lerp(rightElbowStart.z, -0.2, t),
+    THREE.MathUtils.lerp(rightElbowStartX, -0.24, t),
+    THREE.MathUtils.lerp(rightElbowStartY, 0.12, t),
+    THREE.MathUtils.lerp(rightElbowStartZ, -0.2, t),
   );
   rig.weapon.rotation.set(
     THREE.MathUtils.lerp(-0.035, 0.14, t),
