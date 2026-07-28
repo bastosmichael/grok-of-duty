@@ -335,6 +335,15 @@ function Index() {
         </div>
       </section>
 
+      {/* AD · 02 — pre-footer */}
+      {!gameOpen && (
+        <div className="border-t border-border bg-background px-4 py-10 sm:px-6">
+          <AdSlot slot={AD_SLOTS.preFooter} label="// SPONSORED · 02" minHeight={250} />
+        </div>
+      )}
+
+
+
       {/* FOOTER */}
       <footer className="border-t border-border bg-background py-10">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 text-center text-[10px] uppercase sm:px-6 sm:text-xs tracking-widest text-muted-foreground md:flex-row">
