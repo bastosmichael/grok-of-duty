@@ -189,3 +189,14 @@
     color: var(--color-foreground);
   }
 }
+
+/* While the 3D scene is open, hide any AdSense anchor/vignette overlays so they
+   can never sit on top of the canvas or steal touch input from the controls. */
+body.game-active ins.adsbygoogle,
+body.game-active iframe[id^="aswift_"],
+body.game-active .adsbygoogle-noablate,
+body.game-active [id^="google_ads_iframe"] {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
