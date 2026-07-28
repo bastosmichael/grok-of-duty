@@ -11,6 +11,7 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { initializeGoogleServices } from "../lib/google-services";
 
 function NotFoundComponent() {
   return (
@@ -130,6 +131,10 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+
+  useEffect(() => {
+    initializeGoogleServices();
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>

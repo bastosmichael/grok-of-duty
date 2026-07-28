@@ -7,6 +7,7 @@ import { createCombat } from "@/game/combat";
 import { createAudio } from "@/game/audio";
 import { GameHUD, LoadingScreen } from "@/game/ui";
 import { DEFAULT_HUD, type GameHudState, type KillFeedEntry } from "@/game/types";
+import { trackGoogleEvent } from "@/lib/google-services";
 
 interface Props {
   onExit: () => void;
@@ -108,8 +109,13 @@ export default function GameScene({ onExit }: Props) {
         onLevelStart: (level) => {
           // A small between-level recovery keeps early progression welcoming
           // without erasing the pressure of later, denser encounters.
-          playerRef.current?.heal(Math.min(24, 10 + level * 2));
+          playerRef.current?.heal(Math.min(30, 16 + level * 2));
+          trackGoogleEvent("level_start", {
+            level,
+            fighter_count: level,
+          });
         },
+        onLevelComplete: (level) => trackGoogleEvent("level_complete", { level }),
       });
       disposers.push(() => combat.dispose());
       setLoad(0.72, "Spawning hostiles…");
@@ -311,13 +317,22 @@ export default function GameScene({ onExit }: Props) {
         // The simulation remains playable without Web Audio; another click can retry.
       });
     }
-  }, []);
+    trackGoogleEvent("game_engage", {
+      level: hud.level,
+      resumed: hud.level > 1 || hud.score > 0,
+    });
+  }, [hud.level, hud.score]);
 
   const handleExit = useCallback(() => {
+    trackGoogleEvent("game_exit", {
+      level: hud.level,
+      score: hud.score,
+      kills: hud.kills,
+    });
     document.exitPointerLock?.();
     audioRef.current?.setAmbient(false);
     onExit();
-  }, [onExit]);
+  }, [hud.kills, hud.level, hud.score, onExit]);
 
   return (
     <div className="fixed inset-0 z-[200] bg-black">

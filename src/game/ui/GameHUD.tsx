@@ -1,5 +1,6 @@
 import type { KeyboardEvent } from "react";
 import type { DamageIndicator, GameHudState } from "@/game/types";
+import { GOOGLE_ADSENSE_CLIENT } from "@/lib/google-services";
 
 interface GameHUDProps {
   state: GameHudState;
@@ -536,8 +537,8 @@ export function GameHUD({ state, onExit, onEngage }: GameHUDProps) {
                 </h2>
                 <p className="mt-4 max-w-sm font-mono text-[11px] uppercase leading-relaxed tracking-[.11em] text-white/65">
                   Level one begins in a compact arena against one fighter. Every secured level
-                  expands the AO, generates new cover, and adds another faster, more dangerous
-                  operator.
+                  gently expands the AO, generates new cover, and adds one operator. Enemy aim,
+                  speed, and fire lanes rise gradually so every round remains learnable.
                 </p>
 
                 <dl className="mt-7 grid grid-cols-3 gap-px bg-white/10">
@@ -604,7 +605,8 @@ export function GameHUD({ state, onExit, onEngage }: GameHUDProps) {
                     <span className="mt-0.5 text-primary">◆</span>
                     <p className="font-mono text-[10px] uppercase leading-relaxed tracking-[.09em] text-white/55">
                       Each procedural level rolls a new codename, perimeter, cover plan, and enemy
-                      callsigns. Difficulty rises through speed, accuracy, health, and squad size.
+                      callsigns. Early levels prioritize aim practice before pressure builds in
+                      measured training steps.
                     </p>
                   </div>
                 </div>
@@ -617,6 +619,21 @@ export function GameHUD({ state, onExit, onEngage }: GameHUDProps) {
                 </button>
               </div>
             </div>
+            {/* Reserved monetization space appears only while combat is paused,
+                never over the reticle or live damage/weapon telemetry. */}
+            <aside
+              aria-label="Advertisement placeholder"
+              data-ad-client={GOOGLE_ADSENSE_CLIENT}
+              className="mx-auto mb-5 flex h-[50px] w-80 max-w-[calc(100%_-_2rem)] items-center justify-center border border-white/12 bg-black/35 text-center font-mono uppercase sm:h-[60px] sm:w-[468px] sm:max-w-[calc(100%_-_3rem)]"
+            >
+              <div>
+                <div className="text-[7px] tracking-[.3em] text-white/35">Advertisement</div>
+                <div className="mt-1 text-[8px] tracking-[.22em] text-white/55">
+                  AD SPACE · <span className="sm:hidden">320×50</span>
+                  <span className="hidden sm:inline">468×60</span>
+                </div>
+              </div>
+            </aside>
           </div>
         </div>
       )}
