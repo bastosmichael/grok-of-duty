@@ -1,6 +1,7 @@
 import type { KeyboardEvent } from "react";
 import type { DamageIndicator, GameHudState } from "@/game/types";
-import { GOOGLE_ADSENSE_CLIENT } from "@/lib/google-services";
+import AdSlot from "@/components/AdSlot";
+import { AD_SLOTS } from "@/lib/google-services";
 
 interface GameHUDProps {
   state: GameHudState;
@@ -660,21 +661,15 @@ export function GameHUD({ state, onExit, onEngage, touch = false }: GameHUDProps
                 </button>
               </div>
             </div>
-            {/* Reserved monetization space appears only while combat is paused,
-                never over the reticle or live damage/weapon telemetry. */}
-            <aside
-              aria-label="Advertisement placeholder"
-              data-ad-client={GOOGLE_ADSENSE_CLIENT}
-              className="mx-auto mb-5 flex h-[50px] w-80 max-w-[calc(100%_-_2rem)] items-center justify-center border border-white/12 bg-black/35 text-center font-mono uppercase sm:h-[60px] sm:w-[468px] sm:max-w-[calc(100%_-_3rem)]"
-            >
-              <div>
-                <div className="text-[7px] tracking-[.3em] text-white/35">Advertisement</div>
-                <div className="mt-1 text-[8px] tracking-[.22em] text-white/55">
-                  AD SPACE · <span className="sm:hidden">320×50</span>
-                  <span className="hidden sm:inline">468×60</span>
-                </div>
-              </div>
-            </aside>
+            {/* Real AdSense only while combat is paused (Ready Up) — never over the reticle. */}
+            <div className="mx-auto mb-5 w-80 max-w-[calc(100%_-_2rem)] sm:w-[468px] sm:max-w-[calc(100%_-_3rem)]">
+              <AdSlot
+                slot={AD_SLOTS.inGameBriefing}
+                label="// SPONSORED"
+                minHeight={60}
+                className="border-white/12 bg-black/35"
+              />
+            </div>
           </div>
         </div>
       )}

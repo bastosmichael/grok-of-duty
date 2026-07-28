@@ -190,11 +190,31 @@
   }
 }
 
-/* While the 3D scene is open, hide any AdSense anchor/vignette overlays so they
-   can never sit on top of the canvas or steal touch input from the controls. */
+/*
+ * Manual ad units only. Kill AdSense Auto Ads / anchor / vignette overlays
+ * that Google injects at the top (or bottom) and that shove the hero down.
+ * In-page <ins class="adsbygoogle"> inside our AdSlot components still render.
+ */
+.google-auto-placed,
+.adsbygoogle-noablate,
+ins.adsbygoogle[data-anchor-status],
+ins.adsbygoogle[data-ad-status="unfilled"][data-anchor-status],
+body > ins.adsbygoogle[style*="position: fixed"],
+body > div[id^="google_ads_iframe"][style*="position: fixed"] {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  height: 0 !important;
+  max-height: 0 !important;
+  overflow: hidden !important;
+  opacity: 0 !important;
+}
+
+/* While the 3D scene is open, hide every AdSense surface so nothing covers the canvas. */
 body.game-active ins.adsbygoogle,
 body.game-active iframe[id^="aswift_"],
 body.game-active .adsbygoogle-noablate,
+body.game-active .google-auto-placed,
 body.game-active [id^="google_ads_iframe"] {
   display: none !important;
   visibility: hidden !important;

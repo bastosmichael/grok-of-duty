@@ -10,8 +10,8 @@ import {
 import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
-import { reportLovableError } from "../lib/lovable-error-reporting";
-import { initializeGoogleServices } from "../lib/google-services";
+import { reportRuntimeError } from "../lib/error-reporting";
+import { GOOGLE_ADSENSE_CLIENT, initializeGoogleServices } from "../lib/google-services";
 
 function NotFoundComponent() {
   return (
@@ -39,7 +39,7 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   console.error(error);
   const router = useRouter();
   useEffect(() => {
-    reportLovableError(error, { boundary: "tanstack_root_error_component" });
+    reportRuntimeError(error, { boundary: "root_error_component" });
   }, [error]);
 
   return (
@@ -87,22 +87,23 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         content:
           "Grok Of Duty is a browser-based 3D tactical shooter. Drop in, gear up, and dominate — no downloads required.",
       },
-      { name: "author", content: "Grok Of Duty" },
+      { name: "author", content: "Michael Bastos" },
+      { name: "google-adsense-account", content: GOOGLE_ADSENSE_CLIENT },
       { property: "og:title", content: "Grok Of Duty — Browser-Based Tactical FPS" },
       {
         property: "og:description",
         content: "A browser-based 3D tactical shooter. Drop in, gear up, dominate.",
       },
       { property: "og:type", content: "website" },
+      { property: "og:url", content: "https://michaelbastos.com/grok-of-duty/" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:site", content: "@GrokOfDuty" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
       {
         rel: "icon",
-        href: `${import.meta.env.BASE_URL}favicon.ico`,
-        type: "image/x-icon",
+        href: `${import.meta.env.BASE_URL}favicon.svg`,
+        type: "image/svg+xml",
       },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },

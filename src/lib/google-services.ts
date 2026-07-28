@@ -2,16 +2,18 @@ export const GOOGLE_ANALYTICS_ID = "G-QFWCR1XG0X";
 export const GOOGLE_ADSENSE_CLIENT = "ca-pub-4228490019228264";
 
 /**
- * The only two ad placements allowed on the landing page. Paste the ad unit IDs
- * from AdSense (Ads → By ad unit → the 10-digit `data-ad-slot` value). Empty
- * strings keep the placement unrendered, so the page stays clean until real
- * units exist. Auto Ads must be excluded for this URL in the AdSense dashboard.
+ * Manual ad placements only (no top-of-page unit — keeps the hero flush under
+ * the fixed nav). Slot IDs match the inventory used on michaelbastos.com
+ * (see bastosmichael.github.io BlogModal). Replace with dedicated unit IDs
+ * from AdSense when available. Disable Auto Ads for this URL in the dashboard.
  */
 export const AD_SLOTS = {
-  /** Between the Arsenal (features) grid and the Roadmap section. */
-  midPage: "",
-  /** Between the Ops CTA and the footer. */
-  preFooter: "",
+  /** Between Arsenal (features) and Roadmap — never above the hero. */
+  midPage: "1234567890",
+  /** Between Ops CTA and footer. */
+  preFooter: "1234567890",
+  /** In-game briefing only (Ready Up overlay). */
+  inGameBriefing: "1234567890",
 } as const;
 
 const GOOGLE_SERVICE_HOSTS = new Set(["michaelbastos.com", "www.michaelbastos.com"]);
@@ -45,9 +47,8 @@ function ensureScript(documentRef: Document, id: string, src: string): void {
 }
 
 /**
- * Loads MichaelBastos.com's existing Google services only on its production
- * hostnames. Local development and GitHub preview URLs never create analytics
- * traffic or ad requests.
+ * Same IDs as https://github.com/bastosmichael/bastosmichael.github.io
+ * (gtag G-QFWCR1XG0X + AdSense ca-pub-4228490019228264). Production hosts only.
  */
 export function initializeGoogleServices(
   windowRef: Window = window,
@@ -56,17 +57,9 @@ export function initializeGoogleServices(
   if (!shouldLoadGoogleServices(windowRef.location.hostname)) return false;
 
   windowRef.dataLayer ??= [];
-  windowRef.gtag ??= (command, targetOrDate, parameters) => {
-    windowRef.dataLayer?.push([command, targetOrDate, parameters]);
-  };
-
-  if (!documentRef.getElementById("google-analytics-js")) {
-    windowRef.gtag("js", new Date());
-    windowRef.gtag("config", GOOGLE_ANALYTICS_ID, {
-      page_path: windowRef.location.pathname,
-      send_page_view: true,
-    });
-  }
+  windowRef.gtag ??= function gtag(...args: unknown[]) {
+    windowRef.dataLayer?.push(args);
+  } as GoogleTag;
 
   ensureScript(
     documentRef,
@@ -78,6 +71,16 @@ export function initializeGoogleServices(
     "google-adsense-js",
     `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${GOOGLE_ADSENSE_CLIENT}`,
   );
+
+  if (!documentRef.documentElement.dataset.gaConfigured) {
+    windowRef.gtag("js", new Date());
+    windowRef.gtag("config", GOOGLE_ANALYTICS_ID, {
+      page_path: windowRef.location.pathname + windowRef.location.search,
+      send_page_view: true,
+    });
+    documentRef.documentElement.dataset.gaConfigured = "1";
+  }
+
   return true;
 }
 

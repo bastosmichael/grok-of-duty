@@ -353,7 +353,16 @@ function Index() {
           <div className="font-[Orbitron] font-bold text-foreground">
             GROK·OF·DUTY <span className="text-primary">// 0.4.1-ALPHA</span>
           </div>
-          <div>© 2026 Grok Of Duty. All operators reserved.</div>
+          <div>
+            © 2026{" "}
+            <a
+              href="https://michaelbastos.com"
+              className="text-primary underline-offset-4 hover:underline"
+            >
+              Michael Bastos
+            </a>
+            . All operators reserved.
+          </div>
         </div>
       </footer>
 
