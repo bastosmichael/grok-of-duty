@@ -328,18 +328,68 @@ export default function GameScene({ onExit }: Props) {
 
   const handleExit = useCallback(() => {
     document.exitPointerLock?.();
+    playerRef.current?.releaseTouch();
     audioRef.current?.setAmbient(false);
     onExit();
   }, [onExit]);
 
+  const handlePause = useCallback(() => {
+    playerRef.current?.releaseTouch();
+  }, []);
+
+  const touchMove = useCallback((x: number, y: number) => {
+    playerRef.current?.touch.move(x, y);
+  }, []);
+  const touchLook = useCallback((dx: number, dy: number) => {
+    playerRef.current?.touch.look(dx, dy);
+  }, []);
+  const touchFire = useCallback((down: boolean) => {
+    playerRef.current?.touch.setFire(down);
+  }, []);
+  const touchAds = useCallback((down: boolean) => {
+    playerRef.current?.touch.setAds(down);
+  }, []);
+  const touchSprint = useCallback((down: boolean) => {
+    playerRef.current?.touch.setSprint(down);
+  }, []);
+  const touchJump = useCallback(() => {
+    playerRef.current?.touch.jump();
+  }, []);
+  const touchReload = useCallback(() => {
+    playerRef.current?.touch.reload();
+  }, []);
+  const touchCrouch = useCallback(() => {
+    playerRef.current?.touch.toggleCrouch();
+  }, []);
+
   return (
-    <div className="fixed inset-0 z-[200] bg-black">
+    <div className="fixed inset-0 z-[200] bg-black" style={{ touchAction: "none" }}>
       <div ref={mountRef} className="absolute inset-0" />
 
       {hud.loading ? (
         <LoadingScreen progress={hud.loadProgress} label={hud.loadLabel} />
       ) : (
-        <GameHUD state={hud} onExit={handleExit} onEngage={handleEngage} />
+        <>
+          <GameHUD
+            state={hud}
+            onExit={handleExit}
+            onEngage={handleEngage}
+            touch={touchMode}
+          />
+          {touchMode && hud.ready && hud.locked && (
+            <TouchControls
+              onMove={touchMove}
+              onLook={touchLook}
+              onFire={touchFire}
+              onAds={touchAds}
+              onSprint={touchSprint}
+              onJump={touchJump}
+              onReload={touchReload}
+              onCrouch={touchCrouch}
+              onPause={handlePause}
+            />
+          )}
+        </>
       )}
     </div>
   );
