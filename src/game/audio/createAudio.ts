@@ -144,6 +144,122 @@ function playNoise(
   );
 }
 
+type ScoreSource = OscillatorNode | AudioBufferSourceNode;
+const SCORE_ROOTS = [36.708, 29.135, 32.703, 38.891] as const;
+const SCORE_MOTIF = [4, 6, 4.7568, 5.3394, 4, 7.1262, 6, 4.7568] as const;
+const SCORE_BEAT_SECONDS = 60 / 82;
+
+function playScoreTone(
+  ctx: AudioContext,
+  destination: AudioNode,
+  activeSources: Set<ScoreSource>,
+  transientNodes: Set<AudioNode>,
+  options: {
+    start: number;
+    frequency: number;
+    frequencyEnd?: number;
+    gain: number;
+    duration: number;
+    attack: number;
+    type: OscillatorType;
+    filterFrequency: number;
+    pan?: number;
+  },
+): void {
+  const oscillator = ctx.createOscillator();
+  const filter = ctx.createBiquadFilter();
+  const envelope = ctx.createGain();
+  const panner = ctx.createStereoPanner();
+  const end = options.start + options.duration;
+
+  oscillator.type = options.type;
+  oscillator.frequency.setValueAtTime(options.frequency, options.start);
+  if (options.frequencyEnd) {
+    oscillator.frequency.exponentialRampToValueAtTime(options.frequencyEnd, end);
+  }
+  filter.type = "lowpass";
+  filter.frequency.setValueAtTime(options.filterFrequency, options.start);
+  filter.Q.value = 0.55;
+  envelope.gain.setValueAtTime(0.0001, options.start);
+  envelope.gain.exponentialRampToValueAtTime(options.gain, options.start + options.attack);
+  envelope.gain.setTargetAtTime(0.0001, end - Math.min(0.24, options.duration * 0.35), 0.09);
+  panner.pan.value = options.pan ?? 0;
+
+  oscillator.connect(filter);
+  filter.connect(envelope);
+  envelope.connect(panner);
+  panner.connect(destination);
+
+  const nodes: AudioNode[] = [oscillator, filter, envelope, panner];
+  activeSources.add(oscillator);
+  for (const node of nodes) transientNodes.add(node);
+  oscillator.onended = () => {
+    activeSources.delete(oscillator);
+    for (const node of nodes) {
+      transientNodes.delete(node);
+      try {
+        node.disconnect();
+      } catch {
+        // The music graph may already be disconnected during teardown.
+      }
+    }
+  };
+  oscillator.start(options.start);
+  oscillator.stop(end + 0.08);
+}
+
+function playScorePercussion(
+  ctx: AudioContext,
+  destination: AudioNode,
+  buffer: AudioBuffer,
+  activeSources: Set<ScoreSource>,
+  transientNodes: Set<AudioNode>,
+  options: {
+    start: number;
+    gain: number;
+    highpass: number;
+    pan: number;
+  },
+): void {
+  const source = ctx.createBufferSource();
+  const highpass = ctx.createBiquadFilter();
+  const lowpass = ctx.createBiquadFilter();
+  const envelope = ctx.createGain();
+  const panner = ctx.createStereoPanner();
+  source.buffer = buffer;
+  source.playbackRate.value = 1.25;
+  highpass.type = "highpass";
+  highpass.frequency.value = options.highpass;
+  lowpass.type = "lowpass";
+  lowpass.frequency.value = 5200;
+  envelope.gain.setValueAtTime(options.gain, options.start);
+  envelope.gain.exponentialRampToValueAtTime(0.0001, options.start + 0.085);
+  panner.pan.value = options.pan;
+
+  source.connect(highpass);
+  highpass.connect(lowpass);
+  lowpass.connect(envelope);
+  envelope.connect(panner);
+  panner.connect(destination);
+
+  const nodes: AudioNode[] = [source, highpass, lowpass, envelope, panner];
+  activeSources.add(source);
+  for (const node of nodes) transientNodes.add(node);
+  source.onended = () => {
+    activeSources.delete(source);
+    for (const node of nodes) {
+      transientNodes.delete(node);
+      try {
+        node.disconnect();
+      } catch {
+        // The music graph may already be disconnected during teardown.
+      }
+    }
+  };
+  source.start(options.start);
+  source.stop(options.start + 0.11);
+}
+
 export function createAudio(): GameAudio {
   let ctx: AudioContext | null = null;
   let master: GainNode | null = null;
@@ -155,6 +271,15 @@ export function createAudio(): GameAudio {
   let ambientGain: GainNode | null = null;
   let ambientNodes: AudioNode[] = [];
   let ambientStopTimer: ReturnType<typeof setTimeout> | null = null;
+  let scoreTimer: ReturnType<typeof setInterval> | null = null;
+  let scoreGain: GainNode | null = null;
+  let scorePadOscillators: OscillatorNode[] = [];
+  let scoreNextBeat = 0;
+  let scoreBeat = 0;
+  let combatEnergy = 0;
+  let combatEnergyTime = 0;
+  const activeScoreSources = new Set<ScoreSource>();
+  const scoreTransientNodes = new Set<AudioNode>();
   let transientNoise: AudioBuffer | null = null;
   let footAlt = false;
   let disposed = false;
@@ -219,9 +344,22 @@ export function createAudio(): GameAudio {
     }
   };
 
+  const currentCombatEnergy = (time: number): number => {
+    const elapsed = Math.max(0, time - combatEnergyTime);
+    combatEnergy = Math.max(0, combatEnergy - elapsed * 0.035);
+    combatEnergyTime = time;
+    return combatEnergy;
+  };
+
+  const nudgeCombat = (time: number, amount: number): void => {
+    const current = currentCombatEnergy(time);
+    combatEnergy = Math.min(1, current + amount * (1 - current));
+  };
+
   const playGunshot = (ads = false): void => {
     const rig = ensure();
     if (!rig || !transientNoise) return;
+    nudgeCombat(rig.ctx.currentTime, 0.075);
     const pitch = 0.94 + Math.random() * 0.12;
 
     // Muzzle pressure: broad body, supersonic crack, and a short low-frequency push.
@@ -350,6 +488,7 @@ export function createAudio(): GameAudio {
   const playHit = (): void => {
     const rig = ensure();
     if (!rig) return;
+    nudgeCombat(rig.ctx.currentTime, 0.09);
     playOsc(rig.ctx, rig.feedback, {
       type: "square",
       freq: 2450,
@@ -370,6 +509,7 @@ export function createAudio(): GameAudio {
   const playKill = (): void => {
     const rig = ensure();
     if (!rig) return;
+    nudgeCombat(rig.ctx.currentTime, 0.24);
 
     // Low confirmation impact followed by a compact, non-musical upward signature.
     playOsc(rig.ctx, rig.feedback, {
@@ -429,6 +569,7 @@ export function createAudio(): GameAudio {
     const rig = ensure();
     if (!rig || !transientNoise) return;
     const time = rig.ctx.currentTime;
+    nudgeCombat(time, 0.2);
 
     // Briefly duck the whole mix so incoming damage reads immediately.
     rig.master.gain.cancelScheduledValues(time);
@@ -495,6 +636,26 @@ export function createAudio(): GameAudio {
       clearTimeout(ambientStopTimer);
       ambientStopTimer = null;
     }
+    if (scoreTimer) {
+      clearInterval(scoreTimer);
+      scoreTimer = null;
+    }
+    for (const source of activeScoreSources) {
+      try {
+        source.stop();
+      } catch {
+        // A scheduled voice may already have ended.
+      }
+    }
+    activeScoreSources.clear();
+    for (const node of scoreTransientNodes) {
+      try {
+        node.disconnect();
+      } catch {
+        // The transient may have disconnected through its onended callback.
+      }
+    }
+    scoreTransientNodes.clear();
     ambientNodes.forEach((node) => {
       try {
         if (
@@ -510,6 +671,10 @@ export function createAudio(): GameAudio {
     });
     ambientNodes = [];
     ambientGain = null;
+    scoreGain = null;
+    scorePadOscillators = [];
+    scoreNextBeat = 0;
+    scoreBeat = 0;
   };
 
   const setAmbient = (on: boolean): void => {
@@ -526,10 +691,16 @@ export function createAudio(): GameAudio {
       ambientStopTimer = setTimeout(clearAmbient, 260);
       return;
     }
-    if (ambientGain) return;
-    if (ambientStopTimer) {
-      clearTimeout(ambientStopTimer);
-      ambientStopTimer = null;
+    if (ambientGain) {
+      if (ambientStopTimer) {
+        clearTimeout(ambientStopTimer);
+        ambientStopTimer = null;
+      }
+      const time = rig.ctx.currentTime;
+      ambientGain.gain.cancelScheduledValues(time);
+      ambientGain.gain.setValueAtTime(Math.max(0.0001, ambientGain.gain.value), time);
+      ambientGain.gain.exponentialRampToValueAtTime(0.8, time + 0.45);
+      return;
     }
 
     const time = rig.ctx.currentTime;
@@ -569,7 +740,7 @@ export function createAudio(): GameAudio {
     droneFifth.frequency.value = 64.5;
     droneFilter.type = "lowpass";
     droneFilter.frequency.value = 110;
-    droneGain.gain.value = 0.15;
+    droneGain.gain.value = 0.09;
     drone.connect(droneFilter);
     droneFifth.connect(droneFilter);
     droneFilter.connect(droneGain);
@@ -583,12 +754,136 @@ export function createAudio(): GameAudio {
     pulse.connect(pulseGain);
     pulseGain.connect(droneGain.gain);
 
+    // Original procedural tactical score: a restrained four-chord low pad,
+    // sparse modal motif, and pulse layer whose density follows recent combat.
+    // All notes are synthesized in real time; no external recording is used.
+    scoreGain = rig.ctx.createGain();
+    const scoreFilter = rig.ctx.createBiquadFilter();
+    const scorePadGain = rig.ctx.createGain();
+    const scoreReverbSend = rig.ctx.createGain();
+    const scoreFilterLfo = rig.ctx.createOscillator();
+    const scoreFilterDepth = rig.ctx.createGain();
+    scoreGain.gain.value = 0.38;
+    scoreFilter.type = "lowpass";
+    scoreFilter.frequency.value = 520;
+    scoreFilter.Q.value = 0.48;
+    scorePadGain.gain.value = 0.14;
+    scoreReverbSend.gain.value = 0.12;
+    scoreFilterLfo.type = "sine";
+    scoreFilterLfo.frequency.value = 0.028;
+    scoreFilterDepth.gain.value = 95;
+
+    scorePadGain.connect(scoreFilter);
+    scoreFilter.connect(scoreGain);
+    scoreGain.connect(ambientGain);
+    scoreGain.connect(scoreReverbSend);
+    scoreReverbSend.connect(rig.reverb);
+    scoreFilterLfo.connect(scoreFilterDepth);
+    scoreFilterDepth.connect(scoreFilter.frequency);
+
+    const padRatios = [1, 1.5, 2.3784] as const;
+    scorePadOscillators = padRatios.map((ratio, index) => {
+      const oscillator = rig.ctx.createOscillator();
+      const voiceGain = rig.ctx.createGain();
+      oscillator.type = index === 0 ? "sine" : index === 1 ? "triangle" : "sine";
+      oscillator.frequency.value = SCORE_ROOTS[0] * ratio;
+      oscillator.detune.value = index === 1 ? -4 : index === 2 ? 3 : 0;
+      voiceGain.gain.value = index === 0 ? 0.72 : index === 1 ? 0.3 : 0.12;
+      oscillator.connect(voiceGain);
+      voiceGain.connect(scorePadGain);
+      oscillator.start(time);
+      ambientNodes.push(voiceGain);
+      return oscillator;
+    });
+
+    scoreNextBeat = time + 0.08;
+    scoreBeat = 0;
+    combatEnergyTime = time;
+
+    const scheduleScore = (): void => {
+      if (!scoreGain || !transientNoise || disposed) return;
+      const now = rig.ctx.currentTime;
+      const energy = currentCombatEnergy(now);
+      scoreGain.gain.setTargetAtTime(0.34 + energy * 0.16, now, 0.6);
+      scoreFilter.frequency.setTargetAtTime(480 + energy * 520, now, 0.8);
+
+      while (scoreNextBeat < now + 0.65) {
+        const beat = scoreBeat;
+        const chordIndex = Math.floor(beat / 8) % SCORE_ROOTS.length;
+        const root = SCORE_ROOTS[chordIndex]!;
+
+        if (beat % 8 === 0) {
+          for (let index = 0; index < scorePadOscillators.length; index++) {
+            scorePadOscillators[index]!.frequency.setTargetAtTime(
+              root * padRatios[index]!,
+              scoreNextBeat,
+              0.42,
+            );
+          }
+        }
+
+        // Sub pulse is half-time while calm and becomes quarter-time only
+        // after sustained action. It remains below the weapon transient band.
+        if (beat % 2 === 0 || energy > 0.48) {
+          playScoreTone(rig.ctx, scoreGain, activeScoreSources, scoreTransientNodes, {
+            start: scoreNextBeat,
+            frequency: root * (beat % 4 === 0 ? 1 : 1.5),
+            frequencyEnd: root * 0.88,
+            gain: 0.075 + energy * 0.045,
+            duration: 0.3,
+            attack: 0.012,
+            type: "sine",
+            filterFrequency: 150,
+          });
+        }
+
+        // A compact, asymmetric motif avoids an obvious loop. Calm passages
+        // leave large spaces; combat reveals connective notes and metal ticks.
+        if (beat % 4 === 2 || energy > 0.32) {
+          const ratio = SCORE_MOTIF[beat % SCORE_MOTIF.length]!;
+          playScoreTone(rig.ctx, scoreGain, activeScoreSources, scoreTransientNodes, {
+            start: scoreNextBeat + 0.018,
+            frequency: root * ratio,
+            gain: 0.016 + energy * 0.013,
+            duration: 0.74 + (beat % 3) * 0.13,
+            attack: 0.035,
+            type: "triangle",
+            filterFrequency: 1100 + energy * 900,
+            pan: ((beat % 5) - 2) * 0.18,
+          });
+        }
+
+        if (energy > 0.28 && (beat % 2 === 1 || energy > 0.7)) {
+          playScorePercussion(
+            rig.ctx,
+            scoreGain,
+            transientNoise,
+            activeScoreSources,
+            scoreTransientNodes,
+            {
+              start: scoreNextBeat,
+              gain: 0.014 + energy * 0.018,
+              highpass: 1500 + (beat % 3) * 380,
+              pan: beat % 2 === 0 ? -0.24 : 0.24,
+            },
+          );
+        }
+
+        scoreBeat += 1;
+        scoreNextBeat += SCORE_BEAT_SECONDS;
+      }
+    };
+
     wind.start();
     windLfo.start();
     drone.start();
     droneFifth.start();
     pulse.start();
+    scoreFilterLfo.start(time);
+    scheduleScore();
+    scoreTimer = setInterval(scheduleScore, 140);
     ambientNodes = [
+      ...ambientNodes,
       wind,
       windFilter,
       windGain,
@@ -600,6 +895,13 @@ export function createAudio(): GameAudio {
       droneGain,
       pulse,
       pulseGain,
+      ...scorePadOscillators,
+      scorePadGain,
+      scoreFilter,
+      scoreGain,
+      scoreReverbSend,
+      scoreFilterLfo,
+      scoreFilterDepth,
       ambientGain,
     ];
   };

@@ -68,6 +68,7 @@ export type LevelProfile = {
   enemyDamageScale: number;
   enemyFireCooldownScale: number;
   enemyAccuracy: number;
+  concurrentAttackers: number;
   playerClearRadius: number;
 };
 
@@ -90,20 +91,28 @@ export function createLevelProfile(
   const safeLevel = Math.max(1, Math.floor(level));
   const tier = safeLevel - 1;
   const sizeJitter = random() * 1.6;
+  // Raw squad size already adds substantial pressure, so the remaining combat
+  // stats rise in small training-grade steps instead of spiking every round.
+  const durabilityBand = Math.floor(tier / 5);
+  const concurrentAttackers =
+    safeLevel < 9 ? 1 : safeLevel < 17 ? 2 : safeLevel < 29 ? 3 : safeLevel < 45 ? 4 : 5;
 
   return {
     level: safeLevel,
     codename: `${pick(LEVEL_ADJECTIVES, random)} ${pick(LEVEL_NOUNS, random)}`.toUpperCase(),
     // The central promise of the mode: every level adds exactly one fighter.
     fighterCount: safeLevel,
-    arenaHalfSize: Math.min(48, 15.5 + tier * 2.55 + sizeJitter),
-    coverCount: Math.min(8, 1 + Math.floor(tier / 2)),
-    enemyHp: Math.min(118, 58 + tier * 4.5),
-    enemySpeed: Math.min(5.8, 3.15 + tier * 0.2),
-    enemyDamageScale: Math.min(1.25, 0.52 + tier * 0.055),
-    enemyFireCooldownScale: Math.max(0.7, 1.42 - tier * 0.05),
-    enemyAccuracy: Math.min(0.76, 0.4 + tier * 0.035),
-    playerClearRadius: Math.min(10, 7.5 + tier * 0.25),
+    arenaHalfSize: Math.min(44, 15.5 + tier * 0.65 + sizeJitter),
+    coverCount: Math.min(10, 1 + Math.floor(tier / 4)),
+    enemyHp: Math.min(72, 48 + durabilityBand * 2),
+    enemySpeed: Math.min(3.25, 2.55 + tier * 0.02),
+    enemyDamageScale: Math.min(0.6, 0.3 + tier * 0.006),
+    enemyFireCooldownScale: Math.max(1.45, 2.25 - tier * 0.015),
+    enemyAccuracy: Math.min(0.48, 0.24 + tier * 0.004),
+    // Only one operator has an active fire lane through level eight. Later
+    // lanes unlock in wide bands while the remaining squad repositions.
+    concurrentAttackers,
+    playerClearRadius: Math.min(10, 7.5 + tier * 0.1),
   };
 }
 

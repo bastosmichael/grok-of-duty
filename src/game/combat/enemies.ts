@@ -55,6 +55,7 @@ export type EnemySystemOpts = {
   damageScale?: number;
   fireCooldownScale?: number;
   accuracy?: number;
+  maxConcurrentAttackers?: number;
   arenaHalfSize?: number;
   playerClearRadius?: number;
   /** Endless sandbox behavior defaults to true; level waves disable it. */
@@ -270,6 +271,10 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
   const damageScale = opts.damageScale ?? 1;
   const fireCooldownScale = opts.fireCooldownScale ?? 1;
   const accuracyBase = opts.accuracy ?? 0.7;
+  const maxConcurrentAttackers = Math.max(
+    1,
+    Math.min(count, Math.floor(opts.maxConcurrentAttackers ?? Math.ceil(count / 3))),
+  );
   const arenaHalfSize = opts.arenaHalfSize ?? ENEMY_BODY.mapHalf;
   const playerClearRadius = opts.playerClearRadius ?? PLAYER_SPAWN_CLEAR;
   const allowRespawn = opts.respawn ?? true;
@@ -290,6 +295,9 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
       playerClearRadius,
       arenaHalfSize,
     );
+    // Once a wave goes active, contacts have time to move and shoulder their
+    // rifles before the first shot instead of dealing frame-one damage.
+    e.attackCooldown = (0.85 + Math.random() * 0.55) * fireCooldownScale;
     enemies.push(e);
     byId.set(e.id, e);
   }
@@ -469,7 +477,7 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
         dist <= FIRE_MAX_RANGE &&
         e.attackCooldown <= 0 &&
         e.staggerTimer <= 0 &&
-        (e.id + Math.floor(combatTime * 0.7)) % 3 === 0
+        (e.id + Math.floor(combatTime * 0.48)) % count < maxConcurrentAttackers
       ) {
         e.model.rig.muzzle.getWorldPosition(_fromPos);
         _shotDir.set(playerPos.x, playerPos.y + 1.22, playerPos.z).sub(_fromPos);
@@ -486,7 +494,7 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
         if (coverHit && coverHit.t < shotDistance - 0.25) {
           opts.onEnemyShot?.(_fromPos, coverHit.point, false, coverHit.normal);
         } else {
-          const accuracy = THREE.MathUtils.clamp(accuracyBase - shotDistance * 0.006, 0.2, 0.82);
+          const accuracy = THREE.MathUtils.clamp(accuracyBase - shotDistance * 0.006, 0.1, 0.82);
           const hit = Math.random() < accuracy;
           _shotEnd.set(playerPos.x, playerPos.y + 1.15, playerPos.z);
           if (!hit) {

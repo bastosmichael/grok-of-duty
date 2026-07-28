@@ -205,7 +205,10 @@ function Index() {
       </section>
 
       {/* FEATURES */}
-      <section id="features" className="relative border-t border-border bg-background py-16 sm:py-24">
+      <section
+        id="features"
+        className="relative border-t border-border bg-background py-16 sm:py-24"
+      >
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <div className="mb-10 flex flex-col gap-6 sm:mb-16 sm:flex-row sm:items-end sm:justify-between">
             <div>

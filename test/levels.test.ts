@@ -30,12 +30,34 @@ describe("progressive procedural levels", () => {
     expect(first.arenaHalfSize).toBeGreaterThanOrEqual(15.5);
     expect(first.arenaHalfSize).toBeLessThan(18);
     expect(first.enemyDamageScale).toBeLessThan(0.6);
+    expect(first.enemySpeed).toBeLessThan(2.7);
+    expect(first.enemyHp).toBeLessThanOrEqual(50);
+    expect(first.concurrentAttackers).toBe(1);
+    expect(profiles[7]!.concurrentAttackers).toBe(1);
+    expect(profiles[8]!.concurrentAttackers).toBe(2);
     expect(late.arenaHalfSize).toBeGreaterThan(first.arenaHalfSize);
     expect(late.enemySpeed).toBeGreaterThan(first.enemySpeed);
     expect(late.enemyHp).toBeGreaterThan(first.enemyHp);
     expect(late.enemyAccuracy).toBeGreaterThan(first.enemyAccuracy);
     expect(late.enemyDamageScale).toBeGreaterThan(first.enemyDamageScale);
     expect(late.enemyFireCooldownScale).toBeLessThan(first.enemyFireCooldownScale);
+  });
+
+  test("keeps the opening ten levels on a gentle training curve", () => {
+    const first = createLevelProfile(1, () => 0);
+    const fifth = createLevelProfile(5, () => 0);
+    const tenth = createLevelProfile(10, () => 0);
+    const twentieth = createLevelProfile(20, () => 0);
+
+    expect(fifth.enemySpeed - first.enemySpeed).toBeLessThan(0.15);
+    expect(tenth.enemySpeed - first.enemySpeed).toBeLessThan(0.35);
+    expect(tenth.enemyHp - first.enemyHp).toBeLessThan(12);
+    expect(tenth.enemyDamageScale).toBeLessThan(0.37);
+    expect(tenth.enemyAccuracy).toBeLessThan(0.3);
+    expect(tenth.concurrentAttackers).toBe(2);
+    expect(twentieth.concurrentAttackers).toBe(3);
+    expect(twentieth.enemyFireCooldownScale).toBeGreaterThan(1.95);
+    expect(twentieth.enemyHp).toBeLessThanOrEqual(56);
   });
 
   test("generates deterministic random codenames and fighter callsigns", () => {

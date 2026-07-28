@@ -187,12 +187,7 @@ export function TouchControls({
           />
         </div>
         <div className="flex flex-col gap-3">
-          <ActionButton
-            label="JUMP"
-            sub="Jump"
-            className="h-12 w-12 text-[9px]"
-            onDown={onJump}
-          />
+          <ActionButton label="JUMP" sub="Jump" className="h-12 w-12 text-[9px]" onDown={onJump} />
           <ActionButton
             label="FIRE"
             sub="Fire weapon"

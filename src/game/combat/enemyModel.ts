@@ -113,6 +113,12 @@ type MaterialPack = {
 };
 
 const FLOOR_CLEARANCE = 0.012;
+const HIP_TO_KNEE = 0.425;
+const KNEE_TO_ANKLE = 0.4;
+const HIP_PIVOT_Y = -0.02;
+const BOOT_CENTER_Z = 0.07;
+const BOOT_HALF_HEIGHT = 0.0575;
+const BOOT_HALF_LENGTH = 0.145;
 const neutralEuler = new THREE.Euler();
 let sharedGeometry: GeometryKit | null = null;
 let sharedGeometryUsers = 0;
@@ -244,9 +250,12 @@ function markHitZone(mesh: THREE.Mesh, zone: EnemyHitZone, multiplier: number): 
 function solveArmIK(rig: EnemyModelRig, side: "left" | "right", target: THREE.Vector3): void {
   const shoulder = side === "left" ? rig.leftShoulder : rig.rightShoulder;
   const elbow = side === "left" ? rig.leftElbow : rig.rightElbow;
+  const hand = side === "left" ? rig.leftHand : rig.rightHand;
   const sideSign = side === "left" ? -1 : 1;
-  const upperLength = 0.33;
-  const lowerLength = 0.3;
+  // Read the authored joint lengths so contact math cannot drift when a limb
+  // is tuned. The support arm is marginally more extended across the rifle.
+  const upperLength = Math.abs(elbow.position.y);
+  const lowerLength = Math.abs(hand.position.y);
 
   _armDirection.copy(target).sub(shoulder.position);
   const rawDistance = _armDirection.length();
@@ -288,6 +297,43 @@ function solveWeaponGrip(rig: EnemyModelRig): void {
 
   _armTarget.set(0.075, -0.02, 0.1).applyMatrix4(rig.weapon.matrix);
   solveArmIK(rig, "right", _armTarget);
+}
+
+function bootSoleY(
+  centerY: number,
+  hipAngle: number,
+  kneeAngle: number,
+  footAngle: number,
+): number {
+  const shinAngle = hipAngle + kneeAngle;
+  const bootAngle = shinAngle + footAngle;
+  const ankleY =
+    centerY - HIP_TO_KNEE * Math.cos(hipAngle) - KNEE_TO_ANKLE * Math.cos(shinAngle) + HIP_PIVOT_Y;
+  const bootCenterY = ankleY - BOOT_CENTER_Z * Math.sin(bootAngle);
+  const rotatedHalfHeight =
+    BOOT_HALF_HEIGHT * Math.abs(Math.cos(bootAngle)) +
+    BOOT_HALF_LENGTH * Math.abs(Math.sin(bootAngle));
+  return bootCenterY - rotatedHalfHeight;
+}
+
+/**
+ * Analytic boot contact correction. Unlike a bounds traversal this is constant
+ * time, allocation-free, and cheap enough for every visible operator.
+ */
+function plantLowestBoot(rig: EnemyModelRig): void {
+  const leftSole = bootSoleY(
+    rig.centerOfMass.position.y,
+    rig.leftHip.rotation.x,
+    rig.leftKnee.rotation.x,
+    rig.leftFoot.rotation.x,
+  );
+  const rightSole = bootSoleY(
+    rig.centerOfMass.position.y,
+    rig.rightHip.rotation.x,
+    rig.rightKnee.rotation.x,
+    rig.rightFoot.rotation.x,
+  );
+  rig.centerOfMass.position.y += FLOOR_CLEARANCE - Math.min(leftSole, rightSole);
 }
 
 /**
@@ -680,7 +726,7 @@ export function createEnemyModel(variant = 0): EnemyModel {
     [0, Math.PI / 2, 0],
     [0.8, 0.8, 1],
   );
-  const leftElbow = createPivot("rig_left_elbow", leftShoulder, 0, -0.33, 0);
+  const leftElbow = createPivot("rig_left_elbow", leftShoulder, 0, -0.342, 0);
   add(
     leftElbow,
     "left_elbow_pad",
@@ -703,7 +749,7 @@ export function createEnemyModel(variant = 0): EnemyModel {
     "arm",
     0.68,
   );
-  const leftHand = createPivot("rig_left_hand", leftElbow, 0, -0.3, 0);
+  const leftHand = createPivot("rig_left_hand", leftElbow, 0, -0.312, 0);
   add(
     leftHand,
     "left_glove",
@@ -895,8 +941,8 @@ export function resetEnemyModelPose(rig: EnemyModelRig): void {
   rig.centerOfMass.position.set(0, 0.915, 0);
   rig.centerOfMass.rotation.copy(neutralEuler);
   rig.pelvis.rotation.set(0, 0, 0);
-  rig.chest.rotation.set(-0.035, 0, 0);
-  rig.head.rotation.set(0.015, 0, 0);
+  rig.chest.rotation.set(0.018, 0, 0);
+  rig.head.rotation.set(-0.008, 0, 0);
 
   rig.leftHip.rotation.set(0, 0, 0);
   rig.leftKnee.rotation.set(0, 0, 0);
@@ -907,7 +953,9 @@ export function resetEnemyModelPose(rig: EnemyModelRig): void {
 
   rig.leftHand.rotation.set(0.08, 0.08, 0);
   rig.rightHand.rotation.set(0.06, -0.08, 0);
-  rig.weapon.rotation.set(-0.035, 0, 0);
+  rig.weapon.position.set(0.105, 0.34, 0.18);
+  rig.weapon.rotation.set(0.065, 0, 0);
+  plantLowestBoot(rig);
   solveWeaponGrip(rig);
 }
 
@@ -922,36 +970,45 @@ export function poseEnemyModel(rig: EnemyModelRig, pose: EnemyPose): void {
   const recoil = THREE.MathUtils.clamp(pose.recoil ?? 0, 0, 1);
   const flinch = THREE.MathUtils.clamp(pose.flinch ?? 0, 0, 1);
   const flinchYaw = pose.flinchYaw ?? 0;
-  const stride = Math.sin(pose.gaitPhase) * 0.54 * move;
-  const leftLift = Math.max(0, Math.sin(pose.gaitPhase)) * move;
-  const rightLift = Math.max(0, -Math.sin(pose.gaitPhase)) * move;
-  const weightShift = Math.sin(pose.gaitPhase) * 0.018 * move;
+  const phase = pose.gaitPhase * 0.72;
+  const gaitSin = Math.sin(phase);
+  const gaitCos = Math.cos(phase);
+  const stride = gaitSin * 0.46 * move;
+  const leftLift = Math.max(0, gaitSin) * move;
+  const rightLift = Math.max(0, -gaitSin) * move;
+  const weightShift = gaitSin * 0.026 * move;
+  const recoilKick = recoil * recoil;
 
-  rig.centerOfMass.position.set(
-    weightShift,
-    // Compensate the articulated leg arc so at least one boot remains planted
-    // instead of both feet hovering at the middle of every stride.
-    0.915 - Math.abs(Math.sin(pose.gaitPhase)) * 0.049 * move,
-    0,
-  );
-  rig.centerOfMass.rotation.set(0, 0, -weightShift * 0.8);
+  rig.centerOfMass.position.set(weightShift, 0.915, -recoilKick * 0.012);
+  rig.centerOfMass.rotation.set(0, 0, 0);
   rig.pelvis.rotation.set(0, -stride * 0.08, -weightShift * 1.1);
   rig.chest.rotation.set(
-    -0.035 - move * 0.035 + Math.cos(flinchYaw) * flinch * 0.13,
+    0.018 + move * 0.025 - recoilKick * 0.035 + Math.cos(flinchYaw) * flinch * 0.13,
     stride * 0.055 + Math.sin(flinchYaw) * flinch * 0.18,
     -weightShift * 0.75 + Math.sin(flinchYaw) * flinch * 0.09,
   );
-  rig.head.rotation.set(0.015 - flinch * 0.04, -stride * 0.025, 0);
+  rig.head.rotation.set(-0.008 - flinch * 0.04 + recoilKick * 0.018, -stride * 0.025, 0);
 
-  rig.leftHip.rotation.set(stride, 0, 0.015);
-  rig.leftKnee.rotation.set(-(leftLift * 0.62 + rightLift * 0.1), 0, 0);
-  rig.leftFoot.rotation.set(-stride + leftLift * 0.54 + rightLift * 0.08, 0, -0.015);
-  rig.rightHip.rotation.set(-stride, 0, -0.015);
-  rig.rightKnee.rotation.set(-(rightLift * 0.62 + leftLift * 0.1), 0, 0);
-  rig.rightFoot.rotation.set(stride + rightLift * 0.54 + leftLift * 0.08, 0, 0.015);
+  rig.leftHip.rotation.set(stride, 0, 0);
+  rig.leftKnee.rotation.set(-(leftLift * 0.72 + rightLift * 0.08), 0, 0);
+  rig.leftFoot.rotation.set(-stride + leftLift * 0.6 + rightLift * 0.06, 0, 0);
+  rig.rightHip.rotation.set(-stride, 0, 0);
+  rig.rightKnee.rotation.set(-(rightLift * 0.72 + leftLift * 0.08), 0, 0);
+  rig.rightFoot.rotation.set(stride + rightLift * 0.6 + leftLift * 0.06, 0, 0);
+  plantLowestBoot(rig);
 
-  const relaxed = 1 - aim;
-  rig.weapon.rotation.set(-0.035 - recoil * 0.055 + relaxed * 0.16, recoil * 0.012, 0);
+  // The stock stays at the firing shoulder. Recoil travels rearward first,
+  // then produces a short muzzle climb shared by the rifle, chest, and head.
+  rig.weapon.position.set(
+    0.105,
+    THREE.MathUtils.lerp(0.29, 0.34, aim) + gaitCos * 0.006 * move,
+    0.18 - recoilKick * 0.052,
+  );
+  rig.weapon.rotation.set(
+    THREE.MathUtils.lerp(0.235, 0.065, aim) - recoilKick * 0.09,
+    recoilKick * 0.008,
+    0,
+  );
   solveWeaponGrip(rig);
 }
 

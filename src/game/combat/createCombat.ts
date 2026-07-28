@@ -31,6 +31,7 @@ export type CreateCombatOpts = {
   playHitSound?: () => void;
   playKillSound?: () => void;
   onLevelStart?: (level: number) => void;
+  onLevelComplete?: (level: number) => void;
   /** World solid colliders for bullet occlusion / wall impacts. */
   colliders?: Collider[];
 };
@@ -54,6 +55,7 @@ export function createCombat(opts: CreateCombatOpts): CombatSystem {
     playHitSound,
     playKillSound,
     onLevelStart,
+    onLevelComplete,
     colliders = [],
   } = opts;
 
@@ -106,6 +108,7 @@ export function createCombat(opts: CreateCombatOpts): CombatSystem {
       damageScale: profile.enemyDamageScale,
       fireCooldownScale: profile.enemyFireCooldownScale,
       accuracy: profile.enemyAccuracy,
+      maxConcurrentAttackers: profile.concurrentAttackers,
       arenaHalfSize: profile.arenaHalfSize,
       playerClearRadius: profile.playerClearRadius,
       respawn: false,
@@ -282,6 +285,7 @@ export function createCombat(opts: CreateCombatOpts): CombatSystem {
         transitionTimer = LEVEL_CLEAR_DELAY;
         score += currentProfile.level * 150;
         pushKillFeed(`LEVEL ${currentProfile.level.toString().padStart(2, "0")}  //  CLEAR`);
+        onLevelComplete?.(currentProfile.level);
       }
 
       onHud({

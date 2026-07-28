@@ -2,18 +2,21 @@ import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import { createEnemySystem } from "../src/game/combat/enemies";
 import { ENEMY_BODY } from "../src/game/combat/enemyPhysics";
+import { createLevelProfile } from "../src/game/combat/levels";
 
 describe("level enemy waves", () => {
   test("creates the requested easy opening fighter and does not respawn a cleared wave", () => {
     const scene = new THREE.Scene();
     const arenaHalf = 16;
+    const profile = createLevelProfile(1, () => 0);
     const system = createEnemySystem(scene, {
-      count: 1,
-      baseHp: 58,
-      baseSpeed: 3.15,
-      damageScale: 0.52,
-      fireCooldownScale: 1.42,
-      accuracy: 0.4,
+      count: profile.fighterCount,
+      baseHp: profile.enemyHp,
+      baseSpeed: profile.enemySpeed,
+      damageScale: profile.enemyDamageScale,
+      fireCooldownScale: profile.enemyFireCooldownScale,
+      accuracy: profile.enemyAccuracy,
+      maxConcurrentAttackers: profile.concurrentAttackers,
       arenaHalfSize: arenaHalf,
       playerClearRadius: 7.5,
       respawn: false,
@@ -25,10 +28,11 @@ describe("level enemy waves", () => {
       const enemies = system.getEnemies();
       expect(enemies).toHaveLength(1);
       const enemy = enemies[0]!;
-      expect(enemy.hp).toBe(58);
-      expect(enemy.maxHp).toBe(58);
-      expect(enemy.speed).toBeGreaterThanOrEqual(3.15 * 0.92);
-      expect(enemy.speed).toBeLessThanOrEqual(3.15 * 1.08);
+      expect(enemy.hp).toBe(profile.enemyHp);
+      expect(enemy.maxHp).toBe(profile.enemyHp);
+      expect(enemy.speed).toBeGreaterThanOrEqual(profile.enemySpeed * 0.92);
+      expect(enemy.speed).toBeLessThanOrEqual(profile.enemySpeed * 1.08);
+      expect(enemy.attackCooldown).toBeGreaterThanOrEqual(0.85 * profile.enemyFireCooldownScale);
       expect(Math.abs(enemy.mesh.position.x)).toBeLessThan(arenaHalf - ENEMY_BODY.radius);
       expect(Math.abs(enemy.mesh.position.z)).toBeLessThan(arenaHalf - ENEMY_BODY.radius);
 
