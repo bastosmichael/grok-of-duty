@@ -478,7 +478,7 @@ export function GameHUD({ state, onExit, onEngage, touch = false }: GameHUDProps
         className={`hud-motion absolute bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] text-right font-mono uppercase ${touch ? "scale-[.8] origin-top-right opacity-90" : ""}`}
         style={{
           animation: "hud-enter .5s .18s ease-out both",
-          ...(touch ? { top: "9rem", bottom: "auto" } : null),
+          ...(touch ? { top: "calc(env(safe-area-inset-top) + 9rem)", bottom: "auto" } : null),
         }}
         aria-label="Weapon status"
       >
