@@ -183,19 +183,13 @@ function buildM4Viewmodel(): {
   }
 
   // Barrel
-  const barrel = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.011, 0.013, 0.36, 10),
-    matSteel,
-  );
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.013, 0.36, 10), matSteel);
   barrel.rotation.x = Math.PI / 2;
   barrel.position.set(0, 0.048, -0.5);
   root.add(barrel);
 
   // Gas tube
-  const gasTube = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.006, 0.006, 0.22, 6),
-    matSteel,
-  );
+  const gasTube = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.22, 6), matSteel);
   gasTube.rotation.x = Math.PI / 2;
   gasTube.position.set(0, 0.078, -0.32);
   root.add(gasTube);
@@ -206,18 +200,12 @@ function buildM4Viewmodel(): {
   root.add(gasBlock);
 
   // Muzzle device (flash hider)
-  const muzzle = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.017, 0.015, 0.05, 8),
-    matSteel,
-  );
+  const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.015, 0.05, 8), matSteel);
   muzzle.rotation.x = Math.PI / 2;
   muzzle.position.set(0, 0.048, -0.7);
   root.add(muzzle);
   // Hider slots suggestion
-  const hiderRing = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.02, 0.02, 0.012, 8),
-    matGun,
-  );
+  const hiderRing = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.012, 8), matGun);
   hiderRing.rotation.x = Math.PI / 2;
   hiderRing.position.set(0, 0.048, -0.675);
   root.add(hiderRing);
@@ -252,10 +240,7 @@ function buildM4Viewmodel(): {
   root.add(frontSight);
 
   // Stock (collapsible look)
-  const stockTube = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.015, 0.015, 0.14, 8),
-    matSteel,
-  );
+  const stockTube = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.14, 8), matSteel);
   stockTube.rotation.x = Math.PI / 2;
   stockTube.position.set(0, 0.02, 0.22);
   root.add(stockTube);
@@ -337,10 +322,7 @@ function buildM4Viewmodel(): {
   root.add(flashMesh);
 
   // Secondary flash cone
-  const flashCone = new THREE.Mesh(
-    new THREE.ConeGeometry(0.05, 0.1, 6),
-    flashMat,
-  );
+  const flashCone = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.1, 6), flashMat);
   flashCone.rotation.x = -Math.PI / 2;
   flashCone.position.set(0, 0.048, -0.8);
   flashCone.visible = false;
@@ -348,10 +330,7 @@ function buildM4Viewmodel(): {
   (flashMesh as THREE.Mesh & { userData: { cone?: THREE.Mesh } }).userData.cone = flashCone;
 
   // Specular catch strip along top rail (reads metal under moon/sodium)
-  const railCatch = new THREE.Mesh(
-    new THREE.BoxGeometry(0.02, 0.006, 0.42),
-    matSteel,
-  );
+  const railCatch = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.006, 0.42), matSteel);
   railCatch.position.set(0.012, 0.09, -0.12);
   root.add(railCatch);
 
@@ -362,6 +341,13 @@ function buildM4Viewmodel(): {
 }
 
 export function createWeapon(camera: THREE.PerspectiveCamera): WeaponController {
+  // Local fill so dark gun metal reads under night ops (COD viewmodel trick)
+  const viewFill = new THREE.PointLight(0xd0dce8, 1.15, 1.6, 2);
+  viewFill.position.set(0.15, 0.12, -0.12);
+  camera.add(viewFill);
+  const viewRim = new THREE.PointLight(0xffb070, 0.45, 1.3, 2);
+  viewRim.position.set(-0.22, -0.02, -0.28);
+  camera.add(viewRim);
   const built = buildM4Viewmodel();
   const group = built.root;
   group.position.copy(HIP_POS);
@@ -420,11 +406,7 @@ export function createWeapon(camera: THREE.PerspectiveCamera): WeaponController 
   function ejectShell(): void {
     let shell = shells.find((s) => !s.active);
     if (!shell) shell = shells[0]!;
-    shell.mesh.position.set(
-      0.08 + group.position.x * 0.3,
-      -0.1 + group.position.y * 0.2,
-      -0.32,
-    );
+    shell.mesh.position.set(0.08 + group.position.x * 0.3, -0.1 + group.position.y * 0.2, -0.32);
     shell.mesh.rotation.set(
       Math.random() * Math.PI,
       Math.random() * Math.PI,
@@ -633,6 +615,8 @@ export function createWeapon(camera: THREE.PerspectiveCamera): WeaponController 
 
   function dispose(): void {
     camera.remove(group);
+    camera.remove(viewFill);
+    camera.remove(viewRim);
     for (const s of shells) {
       camera.remove(s.mesh);
       s.mesh.geometry.dispose();

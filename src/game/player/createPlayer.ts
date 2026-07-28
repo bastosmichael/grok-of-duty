@@ -1,22 +1,10 @@
 import * as THREE from "three";
 import type { Collider, DamageIndicator, GameHudState } from "@/game/types";
 import { createWeapon, type WeaponController } from "./weapon";
+import { PHYSICS, resolveBody, type PhysicsBody } from "./physics";
 
 const LOOK_SENS = 0.002;
 const PI_2 = Math.PI / 2;
-
-const WALK_SPEED = 5.2;
-const SPRINT_MULT = 1.6;
-const CROUCH_MULT = 0.45;
-const JUMP_VELOCITY = 7.2;
-const GRAVITY = 22;
-const GROUND_Y = 0;
-
-const STAND_HEIGHT = 1.7;
-const CROUCH_HEIGHT = 1.15;
-const PLAYER_RADIUS = 0.35;
-const STAND_CAPSULE_H = 1.7;
-const CROUCH_CAPSULE_H = 1.2;
 
 const FOV_HIP = 75;
 const FOV_ADS = 52;
@@ -56,8 +44,7 @@ export function createPlayer(opts: {
   dispose: () => void;
   weapon: WeaponController;
 } {
-  const { camera, canvas, colliders, onHud, onShoot, onReloadStart, onFootstep, onEmpty } =
-    opts;
+  const { camera, canvas, colliders, onHud, onShoot, onReloadStart, onFootstep, onEmpty } = opts;
 
   // Ensure camera is in the scene graph (for viewmodel lights, etc.)
   if (!camera.parent) {
@@ -66,8 +53,14 @@ export function createPlayer(opts: {
 
   const weapon = createWeapon(camera);
 
-  const position = new THREE.Vector3(0, GROUND_Y, 0);
-  const velocity = new THREE.Vector3();
+  const body: PhysicsBody = {
+    position: new THREE.Vector3(0, PHYSICS.groundY, 0),
+    velocity: new THREE.Vector3(),
+    grounded: true,
+    crouching: false,
+  };
+  const position = body.position;
+  const velocity = body.velocity;
   const euler = new THREE.Euler(0, 0, 0, "YXZ");
   euler.setFromQuaternion(camera.quaternion);
 
@@ -78,15 +71,14 @@ export function createPlayer(opts: {
 
   let crouching = false;
   let grounded = true;
-  let verticalVel = 0;
-  let cameraHeight = STAND_HEIGHT;
-  let targetCamHeight = STAND_HEIGHT;
+  let wasGrounded = true;
+  let cameraHeight = 1.7;
+  let targetCamHeight = 1.7;
 
   let bobPhase = 0;
   let bobOffset = 0;
   let landOffset = 0;
   let landVel = 0;
-  let wasGrounded = true;
   let footstepDist = 0;
 
   let mouseDx = 0;
@@ -109,11 +101,7 @@ export function createPlayer(opts: {
   const wishDir = new THREE.Vector3();
   const forward = new THREE.Vector3();
   const right = new THREE.Vector3();
-  const nextPos = new THREE.Vector3();
   const lookEuler = new THREE.Euler(0, 0, 0, "YXZ");
-  // Reused AABB temps for collision (avoid per-frame alloc)
-  const boxMin = new THREE.Vector3();
-  const boxMax = new THREE.Vector3();
 
   function pushHud(partial: Partial<GameHudState>): void {
     let changed = false;
@@ -141,10 +129,7 @@ export function createPlayer(opts: {
       armor,
       ads: adsHeld && locked && !keys["ShiftLeft"] && !keys["ShiftRight"],
       sprinting:
-        locked &&
-        (keys["ShiftLeft"] || keys["ShiftRight"]) &&
-        !crouching &&
-        !(adsHeld && locked),
+        locked && (keys["ShiftLeft"] || keys["ShiftRight"]) && !crouching && !(adsHeld && locked),
     });
   }
 
@@ -201,10 +186,7 @@ export function createPlayer(opts: {
       document.exitPointerLock?.();
     }
     // prevent page scroll on space/ctrl when locked
-    if (
-      locked &&
-      (e.code === "Space" || e.code === "ControlLeft" || e.code === "ControlRight")
-    ) {
+    if (locked && (e.code === "Space" || e.code === "ControlLeft" || e.code === "ControlRight")) {
       e.preventDefault();
     }
   };
@@ -237,68 +219,6 @@ export function createPlayer(opts: {
     damageIndicators: [],
   });
 
-  // --- Collision helpers ---
-  function setPlayerAabb(pos: THREE.Vector3, height: number): void {
-    const r = PLAYER_RADIUS;
-    boxMin.set(pos.x - r, pos.y, pos.z - r);
-    boxMax.set(pos.x + r, pos.y + height, pos.z + r);
-  }
-
-  function aabbOverlap(
-    aMin: THREE.Vector3,
-    aMax: THREE.Vector3,
-    bMin: THREE.Vector3,
-    bMax: THREE.Vector3,
-  ): boolean {
-    return (
-      aMin.x < bMax.x &&
-      aMax.x > bMin.x &&
-      aMin.y < bMax.y &&
-      aMax.y > bMin.y &&
-      aMin.z < bMax.z &&
-      aMax.z > bMin.z
-    );
-  }
-
-  function resolveCollisions(pos: THREE.Vector3, height: number): void {
-    const r = PLAYER_RADIUS;
-    for (let iter = 0; iter < 3; iter++) {
-      setPlayerAabb(pos, height);
-      for (const c of colliders) {
-        if (!aabbOverlap(boxMin, boxMax, c.min, c.max)) continue;
-
-        const penX1 = boxMax.x - c.min.x;
-        const penX2 = c.max.x - boxMin.x;
-        const penZ1 = boxMax.z - c.min.z;
-        const penZ2 = c.max.z - boxMin.z;
-        const penY1 = boxMax.y - c.min.y;
-        const penY2 = c.max.y - boxMin.y;
-
-        const penX = penX1 < penX2 ? -penX1 : penX2;
-        const penZ = penZ1 < penZ2 ? -penZ1 : penZ2;
-        const penY = penY1 < penY2 ? -penY1 : penY2;
-
-        const absX = Math.abs(penX);
-        const absY = Math.abs(penY);
-        const absZ = Math.abs(penZ);
-
-        // Prefer horizontal slide; only resolve Y if clearly smallest (ceilings / ledges)
-        if (absY < absX && absY < absZ && absY < 0.35) {
-          pos.y += penY;
-          if (penY > 0) verticalVel = Math.max(0, verticalVel);
-          else verticalVel = Math.min(0, verticalVel);
-        } else if (absX < absZ) {
-          pos.x += penX;
-        } else {
-          pos.z += penZ;
-        }
-
-        boxMin.set(pos.x - r, pos.y, pos.z - r);
-        boxMax.set(pos.x + r, pos.y + height, pos.z + r);
-      }
-    }
-  }
-
   function update(dt: number): void {
     // Clamp huge frames (tab switch)
     const t = Math.min(dt, 0.05);
@@ -314,16 +234,12 @@ export function createPlayer(opts: {
     // --- Stance ---
     const wantsCrouch = !!(keys["ControlLeft"] || keys["ControlRight"]);
     crouching = wantsCrouch;
-    const capsuleH = crouching ? CROUCH_CAPSULE_H : STAND_CAPSULE_H;
-    targetCamHeight = crouching ? CROUCH_HEIGHT : STAND_HEIGHT;
+    body.crouching = crouching;
+    targetCamHeight = crouching ? 1.15 : 1.7;
     cameraHeight = THREE.MathUtils.damp(cameraHeight, targetCamHeight, 12, t);
 
     // --- Movement wish ---
-    const sprinting =
-      locked &&
-      (keys["ShiftLeft"] || keys["ShiftRight"]) &&
-      !crouching &&
-      !adsHeld;
+    const sprinting = locked && (keys["ShiftLeft"] || keys["ShiftRight"]) && !crouching && !adsHeld;
     const ads = locked && adsHeld && !sprinting;
 
     wishDir.set(0, 0, 0);
@@ -338,58 +254,23 @@ export function createPlayer(opts: {
     const moving = wishDir.lengthSq() > 0.0001;
     if (moving) wishDir.normalize();
 
-    let speed = WALK_SPEED;
-    if (sprinting && moving) speed *= SPRINT_MULT;
-    if (crouching) speed *= CROUCH_MULT;
-    if (ads) speed *= 0.68;
+    let speed = PHYSICS.walkSpeed;
+    if (sprinting && moving) speed *= PHYSICS.sprintMult;
+    if (crouching) speed *= PHYSICS.crouchMult;
+    if (ads) speed *= PHYSICS.adsMult;
 
-    // Horizontal velocity (direct control — arcade COD feel)
-    velocity.x = wishDir.x * speed;
-    velocity.z = wishDir.z * speed;
+    const prevVy = velocity.y;
+    const wantsJump = locked && !!keys["Space"];
+    body.grounded = grounded;
+    resolveBody(body, colliders, t, wishDir, speed, wantsJump);
+    grounded = body.grounded;
 
-    // Jump
-    if (locked && keys["Space"] && grounded) {
-      verticalVel = JUMP_VELOCITY;
-      grounded = false;
+    // Soft landing impact
+    if (!wasGrounded && grounded && prevVy < -2) {
+      const impact = THREE.MathUtils.clamp(-prevVy / 18, 0, 1);
+      landVel = -impact * 0.08;
     }
-
-    // Gravity
-    verticalVel -= GRAVITY * t;
-    velocity.y = verticalVel;
-
-    // Integrate with axis-separated collision for wall slide
-    nextPos.copy(position);
-
-    // X
-    nextPos.x += velocity.x * t;
-    resolveCollisions(nextPos, capsuleH);
-    // Z
-    nextPos.z += velocity.z * t;
-    resolveCollisions(nextPos, capsuleH);
-    // Y
-    nextPos.y += velocity.y * t;
-    if (nextPos.y <= GROUND_Y) {
-      nextPos.y = GROUND_Y;
-      if (!wasGrounded && verticalVel < -2) {
-        // Soft landing impact
-        const impact = THREE.MathUtils.clamp(-verticalVel / 18, 0, 1);
-        landVel = -impact * 0.08;
-      }
-      verticalVel = 0;
-      grounded = true;
-    } else {
-      grounded = false;
-    }
-    resolveCollisions(nextPos, capsuleH);
-    // Re-clamp ground after collision push
-    if (nextPos.y < GROUND_Y) {
-      nextPos.y = GROUND_Y;
-      verticalVel = 0;
-      grounded = true;
-    }
-
     wasGrounded = grounded;
-    position.copy(nextPos);
 
     // Landing spring
     landVel += -landOffset * 40 * t;
@@ -416,11 +297,7 @@ export function createPlayer(opts: {
     }
 
     // Apply camera position
-    camera.position.set(
-      position.x,
-      position.y + cameraHeight + bobOffset + landOffset,
-      position.z,
-    );
+    camera.position.set(position.x, position.y + cameraHeight + bobOffset + landOffset, position.z);
 
     // FOV lerp — snappy ADS + micro fire punch
     fovPunch = THREE.MathUtils.damp(fovPunch, 0, 14, t);

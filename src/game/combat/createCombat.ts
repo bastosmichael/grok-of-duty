@@ -1,5 +1,6 @@
 import * as THREE from "three";
-import type { GameHudState, KillFeedEntry } from "@/game/types";
+import type { Collider, GameHudState, KillFeedEntry } from "@/game/types";
+import { raycastColliders } from "@/game/player/physics";
 import { createEnemySystem } from "./enemies";
 import { createEffects } from "./effects";
 
@@ -36,6 +37,8 @@ export type CreateCombatOpts = {
   onPlayerDamage: (amount: number, fromWorld?: THREE.Vector3) => void;
   playHitSound?: () => void;
   playKillSound?: () => void;
+  /** World solid colliders for bullet occlusion / wall impacts. */
+  colliders?: Collider[];
 };
 
 export type CombatSystem = {
@@ -49,7 +52,15 @@ export type CombatSystem = {
  * world VFX, and enemy AI tick.
  */
 export function createCombat(opts: CreateCombatOpts): CombatSystem {
-  const { scene, camera, onHud, onPlayerDamage, playHitSound, playKillSound } = opts;
+  const {
+    scene,
+    camera,
+    onHud,
+    onPlayerDamage,
+    playHitSound,
+    playKillSound,
+    colliders = [],
+  } = opts;
 
   const effects = createEffects(scene);
   const enemies = createEnemySystem(scene, {
@@ -96,11 +107,7 @@ export function createCombat(opts: CreateCombatOpts): CombatSystem {
 
   const enemyName = (id: number): string => ENEMY_NAMES[id % ENEMY_NAMES.length];
 
-  const handleShot = (
-    origin: THREE.Vector3,
-    direction: THREE.Vector3,
-    ads: boolean,
-  ): void => {
+  const handleShot = (origin: THREE.Vector3, direction: THREE.Vector3, ads: boolean): void => {
     // Slight aim cone — tighter when ADS
     const spread = ads ? ADS_SPREAD : HIP_SPREAD;
     shotDir.copy(direction).normalize();
@@ -117,11 +124,25 @@ export function createCombat(opts: CreateCombatOpts): CombatSystem {
     const targets = enemies.raycastTargets();
     const hits = raycaster.intersectObjects(targets, false);
 
+    // World occlusion (cover / walls) via AABB raycast
+    const worldHit = colliders.length
+      ? raycastColliders(origin, shotDir, colliders, MAX_RANGE)
+      : null;
+    const enemyDist = hits.length > 0 ? hits[0]!.distance : Infinity;
+    const worldDist = worldHit ? worldHit.t : Infinity;
+
     // Muzzle smoke at barrel / origin
     effects.spawnMuzzleSmoke(origin, shotDir);
 
+    // Wall hit first — bullet stops on cover
+    if (worldHit && worldDist <= enemyDist) {
+      effects.spawnTracer(origin, worldHit.point);
+      effects.spawnImpact(worldHit.point, worldHit.normal);
+      return;
+    }
+
     if (hits.length === 0) {
-      farPoint.copy(origin).addScaledVector(shotDir, 48);
+      farPoint.copy(origin).addScaledVector(shotDir, Math.min(48, MAX_RANGE));
       effects.spawnTracer(origin, farPoint);
       missNormal.copy(shotDir).negate();
       effects.spawnImpact(farPoint, missNormal);

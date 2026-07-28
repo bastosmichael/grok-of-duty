@@ -86,8 +86,7 @@ function DamageDirOverlay({ indicators }: { indicators: DamageIndicator[] }) {
                   width: 4,
                   height: 28,
                   marginLeft: -2,
-                  background:
-                    "linear-gradient(to bottom, rgba(255,50,50,0.85), transparent)",
+                  background: "linear-gradient(to bottom, rgba(255,50,50,0.85), transparent)",
                 }}
               />
             </div>
@@ -130,11 +129,7 @@ export function GameHUD({ state, onExit, onEngage }: GameHUDProps) {
   const armorMax = maxArmor > 0 ? maxArmor : 50;
 
   // Hitmarker color: kill = red, headshot non-kill = gold-ish white, normal = white
-  const hmColor = hitMarkerKill
-    ? "#ff2a2a"
-    : hitMarkerHeadshot
-      ? "#ffe566"
-      : "#ffffff";
+  const hmColor = hitMarkerKill ? "#ff2a2a" : hitMarkerHeadshot ? "#ffe566" : "#ffffff";
   const hmSize = hitMarkerKill ? 28 : hitMarkerHeadshot ? 24 : 20;
   const hmGlow = hitMarkerKill
     ? "0 0 10px #ff2222, 0 0 18px #ff0000"
@@ -172,8 +167,7 @@ export function GameHUD({ state, onExit, onEngage }: GameHUDProps) {
         <div
           className="absolute inset-0"
           style={{
-            background:
-              "radial-gradient(ellipse at center, transparent 42%, rgba(0,0,0,0.6) 100%)",
+            background: "radial-gradient(ellipse at center, transparent 42%, rgba(0,0,0,0.6) 100%)",
           }}
         />
       )}
@@ -262,9 +256,7 @@ export function GameHUD({ state, onExit, onEngage }: GameHUDProps) {
         <div className="border-r-2 border-primary pr-2">
           <div>
             SCORE{" "}
-            <span className="font-[Orbitron] font-bold">
-              {score.toString().padStart(5, "0")}
-            </span>
+            <span className="font-[Orbitron] font-bold">{score.toString().padStart(5, "0")}</span>
           </div>
           <div className="text-muted-foreground">
             KILLS <span className="text-primary">{kills}</span>
@@ -319,7 +311,9 @@ export function GameHUD({ state, onExit, onEngage }: GameHUDProps) {
               <div>
                 <div className="mb-0.5 flex items-center gap-2 text-[9px] text-muted-foreground">
                   <span>HP</span>
-                  <span className="text-primary/70">{Math.round(health)}/{maxHealth}</span>
+                  <span className="text-primary/70">
+                    {Math.round(health)}/{maxHealth}
+                  </span>
                 </div>
                 <SegmentedBar
                   value={health}
@@ -365,9 +359,7 @@ export function GameHUD({ state, onExit, onEngage }: GameHUDProps) {
               ▸ RELOADING…
             </div>
           ) : lowAmmo ? (
-            <div className="mt-1 animate-pulse text-[10px] text-destructive">
-              ▸ LOW AMMO · [R]
-            </div>
+            <div className="mt-1 animate-pulse text-[10px] text-destructive">▸ LOW AMMO · [R]</div>
           ) : (
             <div className="mt-1 text-[10px] text-muted-foreground">[R] RELOAD</div>
           )}

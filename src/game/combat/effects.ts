@@ -339,11 +339,7 @@ export function createEffects(scene: THREE.Scene): EffectsSystem {
         0.5 + Math.random() * 1.0,
         0.6 + Math.random() * 1.2,
       );
-      d.vel.set(
-        (Math.random() - 0.5) * 7,
-        2.5 + Math.random() * 4,
-        (Math.random() - 0.5) * 7,
-      );
+      d.vel.set((Math.random() - 0.5) * 7, 2.5 + Math.random() * 4, (Math.random() - 0.5) * 7);
       d.angVel.set(
         (Math.random() - 0.5) * 12,
         (Math.random() - 0.5) * 12,

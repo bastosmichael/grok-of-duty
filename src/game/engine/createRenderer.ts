@@ -27,16 +27,16 @@ export type GameRenderer = {
  * readable without lifting crushed shadow pockets into grey mud.
  */
 /** Night ops — readable midtones under ACES (COD night is dark but not crushed) */
-const DEFAULT_EXPOSURE = 1.1;
+const DEFAULT_EXPOSURE = 1.2;
 
 /**
  * COD-style bloom: practicals (lamps / windows / visors) glow; midtones stay clean.
  * Threshold just under window/lamp HDR so interiors bloom without washing asphalt.
  */
-const DEFAULT_BLOOM_STRENGTH = 0.38;
-const DEFAULT_BLOOM_RADIUS = 0.4;
-// High threshold — only windows/lamps/tracers bloom, never asphalt
-const DEFAULT_BLOOM_THRESHOLD = 0.92;
+const DEFAULT_BLOOM_STRENGTH = 0.45;
+const DEFAULT_BLOOM_RADIUS = 0.45;
+// Windows/lamps/visors bloom; asphalt stays below threshold
+const DEFAULT_BLOOM_THRESHOLD = 0.78;
 
 /** Cool night void — matches moon key, not pure black crush */
 const NIGHT_FOG_COLOR = 0x0c1420;
@@ -102,8 +102,16 @@ export function createRenderer(mount: HTMLElement): GameRenderer {
   canvas.tabIndex = 0;
   mount.appendChild(canvas);
 
-  // --- Post stack (HalfFloat RTs by default in r152+ → HDR headroom for bloom) ---
-  const composer = new EffectComposer(renderer);
+  // --- Post stack: HalfFloat RT for proper HDR bloom before ACES present ---
+  const composer = new EffectComposer(
+    renderer,
+    new THREE.WebGLRenderTarget(width, height, {
+      type: THREE.HalfFloatType,
+      format: THREE.RGBAFormat,
+      colorSpace: THREE.LinearSRGBColorSpace,
+      depthBuffer: true,
+    }),
+  );
   composer.setPixelRatio(pixelRatio);
   composer.setSize(width, height);
 

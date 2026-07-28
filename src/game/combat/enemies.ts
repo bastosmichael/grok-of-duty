@@ -397,11 +397,7 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
         if (e.hitFlash <= 0) restoreMaterials(e);
       }
 
-      _toPlayer.set(
-        playerPos.x - e.mesh.position.x,
-        0,
-        playerPos.z - e.mesh.position.z,
-      );
+      _toPlayer.set(playerPos.x - e.mesh.position.x, 0, playerPos.z - e.mesh.position.z);
       const dist = _toPlayer.length();
 
       if (dist < SEEK_RANGE && dist > 0.001) {

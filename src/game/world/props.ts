@@ -76,43 +76,37 @@ export function createWorldMaterials(): WorldMaterials {
   const metalMaps = cloneMaps(metal, 1, 1);
   const woodMaps = cloneMaps(wood, 1, 1);
 
-  // Military tarmac — charcoal night asphalt (ACES + moon wash easily)
+  // Night asphalt — mid-dark grit that reads under moon + sodium
   const asphaltMat = new THREE.MeshStandardMaterial({
     map: asphaltMaps.map,
     normalMap: asphaltMaps.normalMap,
     roughnessMap: asphaltMaps.roughnessMap,
-    roughness: 0.92,
-    metalness: 0.02,
-    color: 0x3a3e44,
-    emissive: 0x000000,
-    emissiveIntensity: 0,
-    envMapIntensity: 0.25,
+    roughness: 0.9,
+    metalness: 0.04,
+    color: 0x555a62,
+    envMapIntensity: 0.35,
   });
-  asphaltMat.normalScale.set(0.55, 0.55);
+  asphaltMat.normalScale.set(0.7, 0.7);
 
-  // Weathered concrete — warm midtones under sodium/moon
+  // Weathered concrete — warm, form-readable under artificial lights
   const concreteMat = new THREE.MeshStandardMaterial({
     map: concreteMaps.map,
     normalMap: concreteMaps.normalMap,
     roughnessMap: concreteMaps.roughnessMap,
-    roughness: 0.84,
-    metalness: 0.03,
-    color: 0xc8c0b0,
-    emissive: 0x12100c,
-    emissiveIntensity: 0.08,
+    roughness: 0.8,
+    metalness: 0.05,
+    color: 0xe0d6c4,
     envMapIntensity: 0.5,
   });
-  concreteMat.normalScale.set(0.9, 0.9);
+  concreteMat.normalScale.set(0.95, 0.95);
 
   const concreteDarkMat = new THREE.MeshStandardMaterial({
     map: concreteDarkMaps.map,
     normalMap: concreteDarkMaps.normalMap,
     roughnessMap: concreteDarkMaps.roughnessMap,
-    roughness: 0.86,
-    metalness: 0.03,
-    color: 0x9a948c,
-    emissive: 0x0c0a08,
-    emissiveIntensity: 0.06,
+    roughness: 0.84,
+    metalness: 0.05,
+    color: 0xb8aea2,
     envMapIntensity: 0.45,
   });
 

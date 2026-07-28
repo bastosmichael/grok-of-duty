@@ -96,15 +96,13 @@ export default function GameScene({ onExit }: Props) {
         mergeHud(partial);
       };
 
-      // Forward declare player for combat damage callback
-      let player!: ReturnType<typeof createPlayer>;
-
       const combat = createCombat({
         scene: gfx.scene,
         camera: gfx.camera,
+        colliders: world.colliders,
         onHud,
         onPlayerDamage: (amount, fromWorld) => {
-          player.takeDamage(amount, fromWorld);
+          playerRef.current?.takeDamage(amount, fromWorld);
           audio.playHurt();
         },
         playHitSound: () => audio.playHit(),
@@ -115,7 +113,7 @@ export default function GameScene({ onExit }: Props) {
       await yieldFrame();
       if (disposed) return;
 
-      player = createPlayer({
+      const player = createPlayer({
         camera: gfx.camera,
         scene: gfx.scene,
         canvas: gfx.renderer.domElement,
@@ -155,9 +153,7 @@ export default function GameScene({ onExit }: Props) {
             "aoMap",
           ] as const) {
             const tex = std[key as keyof THREE.MeshStandardMaterial] as
-              | THREE.Texture
-              | null
-              | undefined;
+              THREE.Texture | null | undefined;
             if (tex && "anisotropy" in tex) {
               tex.anisotropy = maxAniso;
               tex.needsUpdate = true;

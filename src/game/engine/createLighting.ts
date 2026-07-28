@@ -92,23 +92,22 @@ export function createLighting(scene: THREE.Scene, renderer: THREE.WebGLRenderer
   const disposables: Array<{ dispose: () => void }> = [];
 
   // --- Cool lunar hemisphere + warm ground bounce ---
-  const hemi = new THREE.HemisphereLight(0x7a98b8, 0x221c14, 0.85);
+  // Balanced night: readable structures without bleaching asphalt
+  const hemi = new THREE.HemisphereLight(0x8aa8c8, 0x2a2418, 1.15);
   hemi.name = "NightHemi";
   scene.add(hemi);
 
-  // --- Ambient fill — COD night still shows structure, not pure silhouette ---
-  const ambient = new THREE.AmbientLight(0x1e2a38, 0.35);
+  const ambient = new THREE.AmbientLight(0x243040, 0.48);
   ambient.name = "NightAmbient";
   scene.add(ambient);
 
-  // --- Moon directional (key light) ---
-  const moon = new THREE.DirectionalLight(0xc8d8f0, 1.8);
+  // Moon directional (key) — cool key with contact shadows
+  const moon = new THREE.DirectionalLight(0xd0e0f5, 2.35);
   moon.name = "Moon";
   moon.position.set(36, 55, -28);
   moon.target.position.set(0, 0, 0);
   moon.castShadow = true;
-  // Soft shadows — never fully crush contact faces
-  moon.shadow.intensity = 0.35;
+  moon.shadow.intensity = 0.45;
 
   const shadow = moon.shadow;
   // 2048 is the browser sweet spot; 4096 doubles cost for marginal gain
@@ -122,12 +121,9 @@ export function createLighting(scene: THREE.Scene, renderer: THREE.WebGLRenderer
   shadow.camera.top = shadowHalf;
   shadow.camera.bottom = -shadowHalf;
   shadow.camera.updateProjectionMatrix();
-  // Bias: prefer normalBias over large constant bias (less peter-panning)
-  // previous normalBias 0.035 floated shadows off crates — COD wants tight contact
-  shadow.bias = -0.00018;
-  shadow.normalBias = 0.018;
-  // Soft but not mushy (radius 2.5 looked airbrushed)
-  shadow.radius = 1.6;
+  shadow.bias = -0.00025;
+  shadow.normalBias = 0.025;
+  shadow.radius = 2.0;
 
   scene.add(moon);
   scene.add(moon.target);
@@ -146,11 +142,13 @@ export function createLighting(scene: THREE.Scene, renderer: THREE.WebGLRenderer
     { x: ARENA_HALF - 4, y: 7.5, z: ARENA_HALF - 6, intensity: 2.5, distance: 42 },
     { x: 0, y: 9, z: -ARENA_HALF + 2, intensity: 2.0, distance: 48 },
     { x: 0, y: 6.5, z: ARENA_HALF - 2, intensity: 1.9, distance: 38 },
-    // Spawn plaza fills — visible cover without bleaching asphalt
-    { x: 0, y: 9, z: 0, intensity: 2.2, distance: 26 },
-    { x: -14, y: 8, z: 10, intensity: 1.8, distance: 28 },
-    { x: 14, y: 8, z: 10, intensity: 1.8, distance: 28 },
-    { x: 0, y: 8, z: 20, intensity: 1.9, distance: 30 },
+    // Spawn plaza fills — even coverage so left/right containers read
+    { x: 0, y: 9, z: 0, intensity: 2.4, distance: 28 },
+    { x: -14, y: 8, z: 10, intensity: 2.6, distance: 32 },
+    { x: 14, y: 8, z: 10, intensity: 2.2, distance: 30 },
+    { x: 0, y: 8, z: 20, intensity: 2.1, distance: 32 },
+    { x: -18, y: 7, z: -8, intensity: 2.0, distance: 28 },
+    { x: 16, y: 7, z: -6, intensity: 1.9, distance: 26 },
   ];
 
   const floodlights: THREE.PointLight[] = [];
@@ -188,7 +186,8 @@ export function createLighting(scene: THREE.Scene, renderer: THREE.WebGLRenderer
   const nightEnv = createNightOpsEnvironment(renderer);
   scene.environment = nightEnv.texture;
   // Keep IBL low so sodium/moon remain the lighting read (metals get just enough reflection)
-  scene.environmentIntensity = 0.35;
+  // Specular fill on metals without washing diffuse
+  scene.environmentIntensity = 0.55;
   disposables.push(nightEnv);
 
   const update = (dt: number, elapsed: number): void => {
