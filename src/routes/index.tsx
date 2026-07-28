@@ -10,12 +10,6 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
-const stats = [
-  { label: "Operators", value: "12K+" },
-  { label: "Matches Today", value: "3,481" },
-  { label: "Avg. Ping", value: "42ms" },
-  { label: "Servers Online", value: "27/27" },
-];
 
 const roadmap = [
   {
@@ -187,17 +181,6 @@ function Index() {
               </a>
             </div>
 
-            {/* Stats bar */}
-            <div className="mt-16 grid max-w-2xl grid-cols-2 gap-px overflow-hidden border border-border bg-border md:grid-cols-4">
-              {stats.map((s) => (
-                <div key={s.label} className="bg-card/80 p-4 backdrop-blur">
-                  <div className="font-[Orbitron] text-2xl font-black text-primary">{s.value}</div>
-                  <div className="mt-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                    {s.label}
-                  </div>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
       </section>
