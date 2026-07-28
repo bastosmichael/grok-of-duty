@@ -589,16 +589,28 @@ export function GameHUD({ state, onExit, onEngage, touch = false }: GameHUDProps
                   </span>
                 </div>
                 <div className="mt-5 grid grid-cols-2 gap-x-5 gap-y-3">
-                  {[
-                    ["WASD", "Move"],
-                    ["MOUSE", "Aim"],
-                    ["LMB", "Fire"],
-                    ["RMB", "Aim down sight"],
-                    ["SHIFT", "Sprint"],
-                    ["CTRL", "Crouch"],
-                    ["SPACE", "Jump"],
-                    ["R", "Reload"],
-                  ].map(([key, action]) => (
+                  {(touch
+                    ? [
+                        ["STICK", "Move"],
+                        ["DRAG", "Aim"],
+                        ["FIRE", "Fire"],
+                        ["ADS", "Aim down sight"],
+                        ["RUN", "Sprint"],
+                        ["CRCH", "Crouch"],
+                        ["JUMP", "Jump"],
+                        ["R", "Reload"],
+                      ]
+                    : [
+                        ["WASD", "Move"],
+                        ["MOUSE", "Aim"],
+                        ["LMB", "Fire"],
+                        ["RMB", "Aim down sight"],
+                        ["SHIFT", "Sprint"],
+                        ["CTRL", "Crouch"],
+                        ["SPACE", "Jump"],
+                        ["R", "Reload"],
+                      ]
+                  ).map(([key, action]) => (
                     <div key={key} className="flex items-center gap-2.5">
                       <Key>{key}</Key>
                       <span className="font-mono text-[10px] uppercase tracking-[.08em] text-white/65">
