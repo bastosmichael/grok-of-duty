@@ -3,6 +3,7 @@ import * as THREE from "three";
 const _tmp = new THREE.Vector3();
 const _tmp2 = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
+const _forward = new THREE.Vector3(0, 0, 1);
 
 type PoolItem = {
   active: boolean;
@@ -36,8 +37,12 @@ type DebrisChunk = PoolItem & {
   angVel: THREE.Vector3;
 };
 
+type ImpactDecal = PoolItem & {
+  mesh: THREE.Mesh;
+};
+
 export type EffectsSystem = {
-  spawnTracer: (origin: THREE.Vector3, end: THREE.Vector3) => void;
+  spawnTracer: (origin: THREE.Vector3, end: THREE.Vector3, color?: number) => void;
   spawnImpact: (position: THREE.Vector3, normal: THREE.Vector3) => void;
   spawnFleshHit: (position: THREE.Vector3, normal?: THREE.Vector3) => void;
   spawnDeath: (position: THREE.Vector3) => void;
@@ -88,6 +93,7 @@ export function createEffects(scene: THREE.Scene): EffectsSystem {
   // --- Shared geometries ---
   const tracerGeo = new THREE.BoxGeometry(0.02, 0.02, 1);
   const debrisGeo = new THREE.BoxGeometry(0.08, 0.05, 0.1);
+  const decalGeo = new THREE.CircleGeometry(0.072, 10);
 
   // --- Tracer pool ---
   const TRACER_POOL = 48;
@@ -125,7 +131,10 @@ export function createEffects(scene: THREE.Scene): EffectsSystem {
     const positions = new Float32Array(PARTICLES_PER * 3);
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    const points = new THREE.Points(geo, concreteMat);
+    // Each pooled burst owns its material so overlapping bursts can fade
+    // independently. The previous shared material made every impact flicker
+    // whenever another burst of the same kind spawned.
+    const points = new THREE.Points(geo, concreteMat.clone());
     points.visible = false;
     points.frustumCulled = false;
     root.add(points);
@@ -177,6 +186,27 @@ export function createEffects(scene: THREE.Scene): EffectsSystem {
     });
   }
 
+  // --- Persistent world bullet marks ---
+  const DECAL_POOL = 40;
+  const decals: ImpactDecal[] = [];
+  const decalMat = new THREE.MeshBasicMaterial({
+    color: 0x100b08,
+    transparent: true,
+    opacity: 0.82,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    side: THREE.DoubleSide,
+    toneMapped: false,
+  });
+  for (let i = 0; i < DECAL_POOL; i++) {
+    const mesh = new THREE.Mesh(decalGeo, decalMat.clone());
+    mesh.visible = false;
+    mesh.renderOrder = 2;
+    root.add(mesh);
+    decals.push({ active: false, life: 0, maxLife: 7, mesh });
+  }
+
   function acquireTracer(): Tracer | null {
     for (const t of tracers) {
       if (!t.active) return t;
@@ -211,6 +241,17 @@ export function createEffects(scene: THREE.Scene): EffectsSystem {
     return oldest;
   }
 
+  function acquireDecal(): ImpactDecal {
+    for (const d of decals) {
+      if (!d.active) return d;
+    }
+    let oldest = decals[0]!;
+    for (const d of decals) {
+      if (d.life < oldest.life) oldest = d;
+    }
+    return oldest;
+  }
+
   function activateBurst(
     kind: SparkBurst["kind"],
     position: THREE.Vector3,
@@ -235,7 +276,7 @@ export function createEffects(scene: THREE.Scene): EffectsSystem {
           : kind === "dust"
             ? dustMat
             : concreteMat;
-    burst.points.material = mat;
+    (burst.points.material as THREE.PointsMaterial).copy(mat);
     burst.points.visible = true;
 
     const n = Math.min(count, PARTICLES_PER);
@@ -285,7 +326,7 @@ export function createEffects(scene: THREE.Scene): EffectsSystem {
     attr.needsUpdate = true;
   }
 
-  const spawnTracer = (origin: THREE.Vector3, end: THREE.Vector3): void => {
+  const spawnTracer = (origin: THREE.Vector3, end: THREE.Vector3, color = 0xffcc66): void => {
     const t = acquireTracer();
     if (!t) return;
 
@@ -305,12 +346,27 @@ export function createEffects(scene: THREE.Scene): EffectsSystem {
     t.mesh.scale.set(1, 1, len);
 
     const mat = t.mesh.material as THREE.MeshBasicMaterial;
+    mat.color.setHex(color);
     mat.opacity = 0.95;
     t.mesh.visible = true;
   };
 
   const spawnImpact = (position: THREE.Vector3, normal: THREE.Vector3): void => {
-    activateBurst("concrete", position, normal, 12, 6.5, 0.32);
+    _tmp.copy(normal);
+    if (_tmp.lengthSq() < 0.001) _tmp.copy(_up);
+    else _tmp.normalize();
+    activateBurst("concrete", position, _tmp, 12, 6.5, 0.32);
+
+    const d = acquireDecal();
+    d.active = true;
+    d.life = 5.5 + Math.random() * 2.5;
+    d.maxLife = d.life;
+    d.mesh.position.copy(position).addScaledVector(_tmp, 0.012);
+    d.mesh.quaternion.setFromUnitVectors(_forward, _tmp);
+    d.mesh.rotateZ(Math.random() * Math.PI * 2);
+    d.mesh.scale.setScalar(0.72 + Math.random() * 0.48);
+    (d.mesh.material as THREE.MeshBasicMaterial).opacity = 0.82;
+    d.mesh.visible = true;
   };
 
   const spawnFleshHit = (position: THREE.Vector3, normal?: THREE.Vector3): void => {
@@ -439,6 +495,19 @@ export function createEffects(scene: THREE.Scene): EffectsSystem {
         d.mesh.visible = false;
       }
     }
+
+    // Bullet marks persist long enough to communicate shot placement, then
+    // ease out instead of vanishing on a hard timer.
+    for (const d of decals) {
+      if (!d.active) continue;
+      d.life -= safeDt;
+      const fade = THREE.MathUtils.clamp(d.life / 1.25, 0, 1);
+      (d.mesh.material as THREE.MeshBasicMaterial).opacity = fade * 0.82;
+      if (d.life <= 0) {
+        d.active = false;
+        d.mesh.visible = false;
+      }
+    }
   };
 
   const dispose = (): void => {
@@ -449,19 +518,25 @@ export function createEffects(scene: THREE.Scene): EffectsSystem {
     }
     for (const b of bursts) {
       b.points.geometry.dispose();
+      (b.points.material as THREE.Material).dispose();
     }
     for (const d of debris) {
+      (d.mesh.material as THREE.Material).dispose();
+    }
+    for (const d of decals) {
       (d.mesh.material as THREE.Material).dispose();
     }
 
     tracerGeo.dispose();
     debrisGeo.dispose();
+    decalGeo.dispose();
     tracerMat.dispose();
     concreteMat.dispose();
     fleshMat.dispose();
     smokeMat.dispose();
     dustMat.dispose();
     debrisMat.dispose();
+    decalMat.dispose();
 
     while (root.children.length > 0) {
       root.remove(root.children[0]);

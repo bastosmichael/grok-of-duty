@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import type { Collider, DamageIndicator, GameHudState } from "@/game/types";
 import { createWeapon, type WeaponController } from "./weapon";
-import { PHYSICS, resolveBody, type PhysicsBody } from "./physics";
+import { canOccupyHeight, PHYSICS, resolveBody, type PhysicsBody } from "./physics";
 
 const LOOK_SENS = 0.002;
 const PI_2 = Math.PI / 2;
@@ -22,6 +22,8 @@ const BOB_SPRINT_AMP = 0.022;
 const EMPTY_CLICK_COOLDOWN = 0.28;
 const DAMAGE_IND_TTL = 1.15;
 const MAX_DAMAGE_INDS = 6;
+const JUMP_BUFFER = 0.13;
+const COYOTE_TIME = 0.105;
 
 export function createPlayer(opts: {
   camera: THREE.PerspectiveCamera;
@@ -77,9 +79,11 @@ export function createPlayer(opts: {
 
   let bobPhase = 0;
   let bobOffset = 0;
+  let bobSide = 0;
   let landOffset = 0;
   let landVel = 0;
   let footstepDist = 0;
+  let cameraRoll = 0;
 
   let mouseDx = 0;
   let mouseDy = 0;
@@ -88,6 +92,10 @@ export function createPlayer(opts: {
   let damageIndId = 1;
   const damageIndicators: DamageIndicator[] = [];
   let fovPunch = 0;
+  let damagePitch = 0;
+  let damageYaw = 0;
+  let jumpBufferT = 0;
+  let coyoteT = COYOTE_TIME;
 
   const keys: Record<string, boolean> = {};
   let fireHeld = false;
@@ -129,7 +137,11 @@ export function createPlayer(opts: {
       armor,
       ads: adsHeld && locked && !keys["ShiftLeft"] && !keys["ShiftRight"],
       sprinting:
-        locked && (keys["ShiftLeft"] || keys["ShiftRight"]) && !crouching && !(adsHeld && locked),
+        locked &&
+        !!keys["KeyW"] &&
+        (keys["ShiftLeft"] || keys["ShiftRight"]) &&
+        !crouching &&
+        !(adsHeld && locked),
     });
   }
 
@@ -153,12 +165,28 @@ export function createPlayer(opts: {
     if (!locked) {
       fireHeld = false;
       adsHeld = false;
+      mouseDx = 0;
+      mouseDy = 0;
+      for (const code of Object.keys(keys)) keys[code] = false;
+    }
+  };
+
+  const onPointerLockError = (): void => {
+    locked = false;
+    pushHud({ locked: false, ads: false, sprinting: false });
+  };
+
+  const tryRequestLock = (): void => {
+    try {
+      void canvas.requestPointerLock().catch(onPointerLockError);
+    } catch {
+      onPointerLockError();
     }
   };
 
   const onMouseDown = (e: MouseEvent): void => {
     if (document.pointerLockElement !== canvas) {
-      if (e.button === 0) canvas.requestPointerLock();
+      if (e.button === 0) tryRequestLock();
       return;
     }
     if (e.button === 0) fireHeld = true;
@@ -176,6 +204,9 @@ export function createPlayer(opts: {
 
   const onKeyDown = (e: KeyboardEvent): void => {
     keys[e.code] = true;
+    if (e.code === "Space" && locked && !e.repeat) {
+      jumpBufferT = JUMP_BUFFER;
+    }
     if (e.code === "KeyR" && locked) {
       if (weapon.reload()) {
         onReloadStart?.();
@@ -195,13 +226,23 @@ export function createPlayer(opts: {
     keys[e.code] = false;
   };
 
+  const onBlur = (): void => {
+    fireHeld = false;
+    adsHeld = false;
+    mouseDx = 0;
+    mouseDy = 0;
+    for (const code of Object.keys(keys)) keys[code] = false;
+  };
+
   document.addEventListener("mousemove", onMouseMove);
   document.addEventListener("pointerlockchange", onPointerLockChange);
+  document.addEventListener("pointerlockerror", onPointerLockError);
   canvas.addEventListener("mousedown", onMouseDown);
   document.addEventListener("mouseup", onMouseUp);
   canvas.addEventListener("contextmenu", onContextMenu);
   document.addEventListener("keydown", onKeyDown);
   document.addEventListener("keyup", onKeyUp);
+  window.addEventListener("blur", onBlur);
 
   // Initial HUD
   pushHud({
@@ -227,19 +268,40 @@ export function createPlayer(opts: {
 
     locked = document.pointerLockElement === canvas;
 
-    // --- Look: apply camera euler + weapon recoil kick on pitch/yaw ---
-    lookEuler.set(euler.x + weapon.getRecoilPitch(), euler.y + weapon.getRecoilYaw(), 0);
+    const localStrafeSpeed = velocity.x * Math.cos(euler.y) + velocity.z * -Math.sin(euler.y);
+    const targetRoll = grounded
+      ? THREE.MathUtils.clamp(-localStrafeSpeed * 0.0018, -0.012, 0.012)
+      : 0;
+    cameraRoll = THREE.MathUtils.damp(cameraRoll, targetRoll, 11, t);
+    damagePitch = THREE.MathUtils.damp(damagePitch, 0, 13, t);
+    damageYaw = THREE.MathUtils.damp(damageYaw, 0, 15, t);
+
+    // --- Look: view recoil, subtle locomotion roll, and directional damage flinch ---
+    lookEuler.set(
+      euler.x + weapon.getRecoilPitch() + damagePitch,
+      euler.y + weapon.getRecoilYaw() + damageYaw,
+      cameraRoll,
+    );
     camera.quaternion.setFromEuler(lookEuler);
 
     // --- Stance ---
     const wantsCrouch = !!(keys["ControlLeft"] || keys["ControlRight"]);
-    crouching = wantsCrouch;
+    if (wantsCrouch) {
+      crouching = true;
+    } else if (crouching && canOccupyHeight(position, colliders, PHYSICS.standHeight)) {
+      crouching = false;
+    }
     body.crouching = crouching;
     targetCamHeight = crouching ? 1.15 : 1.7;
     cameraHeight = THREE.MathUtils.damp(cameraHeight, targetCamHeight, 12, t);
 
     // --- Movement wish ---
-    const sprinting = locked && (keys["ShiftLeft"] || keys["ShiftRight"]) && !crouching && !adsHeld;
+    const sprinting =
+      locked &&
+      !!keys["KeyW"] &&
+      (keys["ShiftLeft"] || keys["ShiftRight"]) &&
+      !crouching &&
+      !adsHeld;
     const ads = locked && adsHeld && !sprinting;
 
     wishDir.set(0, 0, 0);
@@ -251,19 +313,27 @@ export function createPlayer(opts: {
       if (keys["KeyD"]) wishDir.add(right);
       if (keys["KeyA"]) wishDir.sub(right);
     }
-    const moving = wishDir.lengthSq() > 0.0001;
-    if (moving) wishDir.normalize();
+    const hasMoveInput = wishDir.lengthSq() > 0.0001;
+    if (hasMoveInput) wishDir.normalize();
 
     let speed = PHYSICS.walkSpeed;
-    if (sprinting && moving) speed *= PHYSICS.sprintMult;
+    if (sprinting && hasMoveInput) speed *= PHYSICS.sprintMult;
     if (crouching) speed *= PHYSICS.crouchMult;
     if (ads) speed *= PHYSICS.adsMult;
 
     const prevVy = velocity.y;
-    const wantsJump = locked && !!keys["Space"];
+    jumpBufferT = Math.max(0, jumpBufferT - t);
+    coyoteT = grounded ? COYOTE_TIME : Math.max(0, coyoteT - t);
+    const wantsJump = locked && jumpBufferT > 0 && coyoteT > 0;
     body.grounded = grounded;
     resolveBody(body, colliders, t, wishDir, speed, wantsJump);
+    if (wantsJump && !body.grounded) {
+      jumpBufferT = 0;
+      coyoteT = 0;
+    }
     grounded = body.grounded;
+    const horizontalSpeed = Math.hypot(velocity.x, velocity.z);
+    const moving = hasMoveInput && horizontalSpeed > 0.18;
 
     // Soft landing impact
     if (!wasGrounded && grounded && prevVy < -2) {
@@ -282,7 +352,8 @@ export function createPlayer(opts: {
       const freq = sprinting ? BOB_SPRINT_FREQ : BOB_WALK_FREQ;
       const amp = sprinting ? BOB_SPRINT_AMP : BOB_WALK_AMP;
       bobPhase += t * freq * Math.PI * 2;
-      bobOffset = Math.sin(bobPhase) * amp;
+      bobOffset = (Math.abs(Math.sin(bobPhase)) - 0.35) * amp;
+      bobSide = Math.cos(bobPhase) * amp * 0.55;
       // Footsteps on bob peaks
       footstepDist += speed * t;
       const stepLen = sprinting ? 1.6 : 1.15;
@@ -293,17 +364,25 @@ export function createPlayer(opts: {
     } else {
       bobPhase = 0;
       bobOffset = THREE.MathUtils.damp(bobOffset, 0, 10, t);
+      bobSide = THREE.MathUtils.damp(bobSide, 0, 10, t);
       footstepDist = 0;
     }
 
     // Apply camera position
-    camera.position.set(position.x, position.y + cameraHeight + bobOffset + landOffset, position.z);
+    camera.position.set(
+      position.x + Math.cos(euler.y) * bobSide,
+      position.y + cameraHeight + bobOffset + landOffset,
+      position.z - Math.sin(euler.y) * bobSide,
+    );
 
     // FOV lerp — snappy ADS + micro fire punch
     fovPunch = THREE.MathUtils.damp(fovPunch, 0, 14, t);
     const targetFov = (ads ? FOV_ADS : FOV_HIP) + fovPunch;
-    camera.fov = THREE.MathUtils.damp(camera.fov, targetFov, 14, t);
-    camera.updateProjectionMatrix();
+    const nextFov = THREE.MathUtils.damp(camera.fov, targetFov, ads ? 18 : 13, t);
+    if (Math.abs(nextFov - camera.fov) > 0.0001) {
+      camera.fov = nextFov;
+      camera.updateProjectionMatrix();
+    }
 
     // Weapon
     weapon.setAds(ads);
@@ -314,6 +393,8 @@ export function createPlayer(opts: {
       mouseDx,
       mouseDy,
       time,
+      moveSpeed: horizontalSpeed / Math.max(PHYSICS.walkSpeed, 0.001),
+      strafe: THREE.MathUtils.clamp(localStrafeSpeed / Math.max(speed, 0.001), -1, 1),
     });
     mouseDx = 0;
     mouseDy = 0;
@@ -402,6 +483,8 @@ export function createPlayer(opts: {
       const localX = ndx * rx + ndz * rz;
       const localZ = ndx * fx + ndz * fz;
       const angle = Math.atan2(localX, localZ);
+      damagePitch -= THREE.MathUtils.clamp(amount * 0.00045, 0.004, 0.018);
+      damageYaw += THREE.MathUtils.clamp(localX * amount * 0.0006, -0.025, 0.025);
 
       damageIndicators.push({
         id: damageIndId++,
@@ -430,20 +513,20 @@ export function createPlayer(opts: {
   function dispose(): void {
     document.removeEventListener("mousemove", onMouseMove);
     document.removeEventListener("pointerlockchange", onPointerLockChange);
+    document.removeEventListener("pointerlockerror", onPointerLockError);
     canvas.removeEventListener("mousedown", onMouseDown);
     document.removeEventListener("mouseup", onMouseUp);
     canvas.removeEventListener("contextmenu", onContextMenu);
     document.removeEventListener("keydown", onKeyDown);
     document.removeEventListener("keyup", onKeyUp);
+    window.removeEventListener("blur", onBlur);
     weapon.dispose();
   }
 
   return {
     update,
     isLocked: () => locked,
-    requestLock: () => {
-      canvas.requestPointerLock();
-    },
+    requestLock: tryRequestLock,
     getPosition: () => position.clone(),
     takeDamage,
     heal,

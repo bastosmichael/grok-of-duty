@@ -66,8 +66,9 @@ function createNightOpsEnvironment(renderer: THREE.WebGLRenderer): {
   box.position.y = 1.5;
   envScene.add(box);
 
-  // sigma slightly higher → softer, less mirror-sharp studio reflections
-  const envRT = pmrem.fromScene(envScene, 0.06);
+  // Keep blur inside PMREM's supported sample budget; broader roughness comes
+  // from the materials themselves rather than an over-sampled probe.
+  const envRT = pmrem.fromScene(envScene, 0.035);
 
   // Tear down probe scene geometry/materials
   ground.geometry.dispose();
@@ -93,16 +94,16 @@ export function createLighting(scene: THREE.Scene, renderer: THREE.WebGLRenderer
 
   // --- Cool lunar hemisphere + warm ground bounce ---
   // Balanced night: readable structures without bleaching asphalt
-  const hemi = new THREE.HemisphereLight(0x8aa8c8, 0x2a2418, 1.15);
+  const hemi = new THREE.HemisphereLight(0x7f9cbd, 0x231d14, 0.72);
   hemi.name = "NightHemi";
   scene.add(hemi);
 
-  const ambient = new THREE.AmbientLight(0x243040, 0.48);
+  const ambient = new THREE.AmbientLight(0x1d2b3d, 0.2);
   ambient.name = "NightAmbient";
   scene.add(ambient);
 
   // Moon directional (key) — cool key with contact shadows
-  const moon = new THREE.DirectionalLight(0xd0e0f5, 2.35);
+  const moon = new THREE.DirectionalLight(0xcadcf5, 2.75);
   moon.name = "Moon";
   moon.position.set(36, 55, -28);
   moon.target.position.set(0, 0, 0);
@@ -135,27 +136,28 @@ export function createLighting(scene: THREE.Scene, renderer: THREE.WebGLRenderer
     z: number;
     intensity: number;
     distance: number;
+    color?: number;
   }> = [
-    { x: -ARENA_HALF + 4, y: 7.5, z: -ARENA_HALF + 6, intensity: 2.4, distance: 42 },
-    { x: ARENA_HALF - 4, y: 7.5, z: -ARENA_HALF + 6, intensity: 2.2, distance: 40 },
-    { x: -ARENA_HALF + 4, y: 7.5, z: ARENA_HALF - 6, intensity: 2.3, distance: 40 },
-    { x: ARENA_HALF - 4, y: 7.5, z: ARENA_HALF - 6, intensity: 2.5, distance: 42 },
-    { x: 0, y: 9, z: -ARENA_HALF + 2, intensity: 2.0, distance: 48 },
-    { x: 0, y: 6.5, z: ARENA_HALF - 2, intensity: 1.9, distance: 38 },
-    // Spawn plaza fills — even coverage so left/right containers read
-    { x: 0, y: 9, z: 0, intensity: 2.4, distance: 28 },
-    { x: -14, y: 8, z: 10, intensity: 2.6, distance: 32 },
-    { x: 14, y: 8, z: 10, intensity: 2.2, distance: 30 },
-    { x: 0, y: 8, z: 20, intensity: 2.1, distance: 32 },
-    { x: -18, y: 7, z: -8, intensity: 2.0, distance: 28 },
-    { x: 16, y: 7, z: -6, intensity: 1.9, distance: 26 },
+    // PointLight intensity is candela in current Three.js. These values create
+    // genuinely readable pools under inverse-square falloff instead of the
+    // almost-black legacy 1–3 intensity range.
+    { x: -36, y: 8, z: -34, intensity: 190, distance: 34 },
+    { x: 36, y: 8, z: -34, intensity: 175, distance: 34 },
+    { x: -36, y: 8, z: 34, intensity: 170, distance: 32 },
+    { x: 36, y: 8, z: 34, intensity: 195, distance: 34 },
+    // Plaza lighting deliberately alternates sodium and cool security LEDs,
+    // producing color contrast that helps silhouettes read across lanes.
+    { x: -13, y: 7.5, z: 8, intensity: 165, distance: 27 },
+    { x: 13, y: 7.5, z: 8, intensity: 145, distance: 26, color: 0x8fc6ff },
+    { x: 0, y: 8.5, z: -21, intensity: 180, distance: 30 },
+    { x: 0, y: 9, z: 23, intensity: 155, distance: 29, color: 0xa8d4ff },
   ];
 
   const floodlights: THREE.PointLight[] = [];
   for (let i = 0; i < floodConfigs.length; i++) {
     const cfg = floodConfigs[i]!;
     // decay 2 ≈ physical inverse-square falloff
-    const light = new THREE.PointLight(0xff9a4a, cfg.intensity, cfg.distance, 2);
+    const light = new THREE.PointLight(cfg.color ?? 0xff9a4a, cfg.intensity, cfg.distance, 2);
     light.name = `FloodSodium_${i}`;
     light.position.set(cfg.x, cfg.y, cfg.z);
     // Shadows off for all floods (perf); moon owns contact shadows
@@ -168,11 +170,11 @@ export function createLighting(scene: THREE.Scene, renderer: THREE.WebGLRenderer
   // Cool white, tight cone, high intensity so it reads through fog
   const searchlight = new THREE.SpotLight(
     0xe8f0ff,
-    7.5,
+    2100,
     110,
-    THREE.MathUtils.degToRad(18),
-    0.42,
-    1.2,
+    THREE.MathUtils.degToRad(14),
+    0.5,
+    1.5,
   );
   searchlight.name = "Searchlight";
   searchlight.position.set(0, 24, 0);
@@ -182,13 +184,38 @@ export function createLighting(scene: THREE.Scene, renderer: THREE.WebGLRenderer
   scene.add(searchlight);
   scene.add(searchlight.target);
 
+  // Standard fog does not illuminate, so a restrained translucent cone is
+  // needed to make the sweeping searchlight legible in the air.
+  const beamLength = 48;
+  const beamRadius = Math.tan(searchlight.angle) * beamLength;
+  const beamMaterial = new THREE.MeshBasicMaterial({
+    color: 0x9cc6ee,
+    transparent: true,
+    opacity: 0.036,
+    depthWrite: false,
+    depthTest: true,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    fog: true,
+    toneMapped: false,
+  });
+  const beamGeometry = new THREE.CylinderGeometry(0.05, beamRadius, beamLength, 20, 1, true);
+  const searchBeam = new THREE.Mesh(beamGeometry, beamMaterial);
+  searchBeam.name = "SearchlightAtmosphericCone";
+  searchBeam.renderOrder = 2;
+  searchBeam.frustumCulled = false;
+  scene.add(searchBeam);
+
   // --- Outdoor night IBL (subtle specular / ambient GI cue) ---
   const nightEnv = createNightOpsEnvironment(renderer);
   scene.environment = nightEnv.texture;
   // Keep IBL low so sodium/moon remain the lighting read (metals get just enough reflection)
   // Specular fill on metals without washing diffuse
-  scene.environmentIntensity = 0.55;
+  scene.environmentIntensity = 0.48;
   disposables.push(nightEnv);
+
+  const beamDirection = new THREE.Vector3();
+  const beamAxis = new THREE.Vector3(0, -1, 0);
 
   const update = (dt: number, elapsed: number): void => {
     // Slow figure-eight / orbit sweep across the arena floor
@@ -198,6 +225,12 @@ export function createLighting(scene: THREE.Scene, renderer: THREE.WebGLRenderer
     const z = Math.sin(elapsed * speed * 0.73) * radius * 0.85;
     searchlight.target.position.set(x, 0.05, z);
     searchlight.target.updateMatrixWorld();
+
+    beamDirection.copy(searchlight.target.position).sub(searchlight.position).normalize();
+    searchBeam.position.copy(searchlight.position).addScaledVector(beamDirection, beamLength * 0.5);
+    searchBeam.quaternion.setFromUnitVectors(beamAxis, beamDirection);
+    beamMaterial.opacity =
+      0.032 + Math.sin(elapsed * 1.7) * 0.003 + Math.sin(elapsed * 7.3) * 0.0015;
 
     // Tiny sodium flicker for tactical authenticity (subtle — not horror strobe)
     for (let i = 0; i < floodlights.length; i++) {
@@ -224,6 +257,9 @@ export function createLighting(scene: THREE.Scene, renderer: THREE.WebGLRenderer
 
     scene.remove(searchlight);
     scene.remove(searchlight.target);
+    scene.remove(searchBeam);
+    beamGeometry.dispose();
+    beamMaterial.dispose();
 
     if (scene.environment === nightEnv.texture) {
       scene.environment = null;

@@ -8,21 +8,52 @@ function makeCanvas(size: number): HTMLCanvasElement {
   return c;
 }
 
-function noise2(x: number, y: number, seed = 0): number {
-  const n = Math.sin(x * 127.1 + y * 311.7 + seed * 74.7) * 43758.5453;
-  return n - Math.floor(n);
+function hash2(x: number, y: number, seed = 0): number {
+  // Fast integer avalanche hash. Procedural map construction runs millions of
+  // samples at boot, so avoiding transcendental sine calls is material to TTI.
+  let h =
+    Math.imul(Math.trunc(x), 374761393) ^
+    Math.imul(Math.trunc(y), 668265263) ^
+    Math.imul(Math.trunc(seed), 1442695041);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967295;
 }
 
-function fbm(x: number, y: number, octaves = 4, seed = 0): number {
-  let v = 0;
+function smoothCurve(t: number): number {
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * Tileable lattice noise. The old direct sine hash looked like television
+ * static even at low frequencies; interpolation produces believable broad
+ * staining and wear while the wrapped lattice keeps repeated maps seamless.
+ */
+function valueNoiseTiled(x: number, y: number, period: number, seed = 0): number {
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const tx = smoothCurve(x - x0);
+  const ty = smoothCurve(y - y0);
+  const wrap = (v: number): number => ((v % period) + period) % period;
+  const a = hash2(wrap(x0), wrap(y0), seed);
+  const b = hash2(wrap(x0 + 1), wrap(y0), seed);
+  const c = hash2(wrap(x0), wrap(y0 + 1), seed);
+  const d = hash2(wrap(x0 + 1), wrap(y0 + 1), seed);
+  return THREE.MathUtils.lerp(THREE.MathUtils.lerp(a, b, tx), THREE.MathUtils.lerp(c, d, tx), ty);
+}
+
+function fbm(uCoord: number, vCoord: number, octaves = 4, seed = 0, baseFrequency = 4): number {
+  let value = 0;
   let a = 0.5;
-  let f = 1;
+  let frequency = Math.max(1, Math.floor(baseFrequency));
+  let amplitudeSum = 0;
   for (let i = 0; i < octaves; i++) {
-    v += a * noise2(x * f, y * f, seed + i * 17);
+    value += a * valueNoiseTiled(uCoord * frequency, vCoord * frequency, frequency, seed + i * 17);
+    amplitudeSum += a;
     a *= 0.5;
-    f *= 2;
+    frequency *= 2;
   }
-  return v;
+  return value / Math.max(amplitudeSum, 0.001);
 }
 
 /** Shared sampler setup — mipmaps + anisotropy for oblique ground/wall views */
@@ -50,11 +81,12 @@ export function proceduralColorMap(
   const img = ctx.createImageData(size, size);
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      const n = fbm((x / size) * 8, (y / size) * 8, 5, seed);
-      const grain = (noise2(x, y, seed + 9) - 0.5) * variance;
+      const u = x / size;
+      const v = y / size;
+      const n = fbm(u, v, 5, seed, 7);
+      const grain = (hash2(x, y, seed + 9) - 0.5) * variance;
       // Secondary low-freq blotch for less "static noise" look under moonlight
-      const blotch =
-        (fbm((x / size) * 2.5, (y / size) * 2.5, 3, seed + 40) - 0.5) * variance * 0.55;
+      const blotch = (fbm(u, v, 3, seed + 40, 2) - 0.5) * variance * 0.55;
       const i = (y * size + x) * 4;
       img.data[i] = Math.max(0, Math.min(255, base[0] + n * variance + grain + blotch));
       img.data[i + 1] = Math.max(
@@ -76,7 +108,14 @@ export function proceduralNormalMap(size: number, strength = 1, seed = 2): THREE
   const c = makeCanvas(size);
   const ctx = c.getContext("2d")!;
   const img = ctx.createImageData(size, size);
-  const h = (x: number, y: number) => fbm((x / size) * 12, (y / size) * 12, 5, seed);
+  const heightField = new Float32Array(size * size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      heightField[y * size + x] = fbm(x / size, y / size, 5, seed, 12);
+    }
+  }
+  const h = (x: number, y: number): number =>
+    heightField[((y + size) % size) * size + ((x + size) % size)]!;
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       // Central differences — strength scaled for MeshStandard normalScale ~1
@@ -107,9 +146,11 @@ export function proceduralRoughnessMap(
   const img = ctx.createImageData(size, size);
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      const n = fbm((x / size) * 10, (y / size) * 10, 4, seed);
+      const u = x / size;
+      const vCoord = y / size;
+      const n = fbm(u, vCoord, 4, seed, 10);
       // Wear streaks — slightly anisotropic roughness variation
-      const streak = fbm((x / size) * 18, (y / size) * 3, 3, seed + 7);
+      const streak = fbm(u, vCoord, 3, seed + 7, 3);
       const v = Math.max(
         0,
         Math.min(1, base + (n - 0.5) * variance * 2 + (streak - 0.5) * variance * 0.35),
@@ -126,17 +167,141 @@ export function proceduralRoughnessMap(
   return configureMap(new THREE.CanvasTexture(c), 4, false);
 }
 
+function canvasOf(texture: THREE.CanvasTexture): HTMLCanvasElement {
+  return texture.image as HTMLCanvasElement;
+}
+
+function drawAsphaltWear(
+  map: THREE.CanvasTexture,
+  roughnessMap: THREE.CanvasTexture,
+  size: number,
+): void {
+  const colorCtx = canvasOf(map).getContext("2d")!;
+  const roughCtx = canvasOf(roughnessMap).getContext("2d")!;
+
+  // Fine aggregate catches the moon without turning the road into uniform noise.
+  for (let i = 0; i < size * 5; i++) {
+    const x = hash2(i, 1, 901) * size;
+    const y = hash2(i, 2, 902) * size;
+    const radius = 0.25 + hash2(i, 3, 903) * 1.15;
+    const warm = hash2(i, 4, 904) > 0.72;
+    colorCtx.fillStyle = warm ? "rgba(105,98,84,0.18)" : "rgba(175,184,196,0.11)";
+    colorCtx.beginPath();
+    colorCtx.arc(x, y, radius, 0, Math.PI * 2);
+    colorCtx.fill();
+  }
+
+  // Hairline repair cracks. Paths are deterministic and cross the tile edges rarely.
+  for (let crack = 0; crack < 9; crack++) {
+    let x = hash2(crack, 0, 910) * size;
+    let y = hash2(crack, 1, 911) * size;
+    colorCtx.beginPath();
+    colorCtx.moveTo(x, y);
+    roughCtx.beginPath();
+    roughCtx.moveTo(x, y);
+    for (let segment = 0; segment < 8; segment++) {
+      x += (hash2(crack, segment, 912) - 0.47) * size * 0.045;
+      y += (0.035 + hash2(crack, segment, 913) * 0.035) * size;
+      colorCtx.lineTo(x, y);
+      roughCtx.lineTo(x, y);
+    }
+    colorCtx.strokeStyle = "rgba(8,10,12,0.56)";
+    colorCtx.lineWidth = Math.max(0.8, size / 420);
+    colorCtx.stroke();
+    roughCtx.strokeStyle = "rgba(65,65,65,0.45)";
+    roughCtx.lineWidth = Math.max(1, size / 320);
+    roughCtx.stroke();
+  }
+
+  map.needsUpdate = true;
+  roughnessMap.needsUpdate = true;
+}
+
+function drawConcreteWear(
+  map: THREE.CanvasTexture,
+  roughnessMap: THREE.CanvasTexture,
+  size: number,
+): void {
+  const colorCtx = canvasOf(map).getContext("2d")!;
+  const roughCtx = canvasOf(roughnessMap).getContext("2d")!;
+
+  // Mineral speckle and shallow pitting provide mid-frequency read at arm's length.
+  for (let i = 0; i < size * 1.5; i++) {
+    const x = hash2(i, 0, 921) * size;
+    const y = hash2(i, 1, 922) * size;
+    const r = 0.4 + hash2(i, 2, 923) * 1.8;
+    const dark = hash2(i, 3, 924) > 0.44;
+    colorCtx.fillStyle = dark ? "rgba(46,44,40,0.16)" : "rgba(240,235,220,0.12)";
+    colorCtx.beginPath();
+    colorCtx.arc(x, y, r, 0, Math.PI * 2);
+    colorCtx.fill();
+
+    if (i % 4 === 0) {
+      roughCtx.fillStyle = dark ? "rgba(250,250,250,0.14)" : "rgba(95,95,95,0.12)";
+      roughCtx.beginPath();
+      roughCtx.arc(x, y, r * 1.4, 0, Math.PI * 2);
+      roughCtx.fill();
+    }
+  }
+
+  // Damp vertical runoff gives walls scale and a history.
+  const stain = colorCtx.createLinearGradient(0, 0, 0, size);
+  stain.addColorStop(0, "rgba(40,48,50,0.02)");
+  stain.addColorStop(0.72, "rgba(34,40,39,0.06)");
+  stain.addColorStop(1, "rgba(24,30,28,0.18)");
+  colorCtx.fillStyle = stain;
+  colorCtx.fillRect(0, 0, size, size);
+
+  map.needsUpdate = true;
+  roughnessMap.needsUpdate = true;
+}
+
+function drawMetalWear(
+  map: THREE.CanvasTexture,
+  roughnessMap: THREE.CanvasTexture,
+  size: number,
+): void {
+  const colorCtx = canvasOf(map).getContext("2d")!;
+  const roughCtx = canvasOf(roughnessMap).getContext("2d")!;
+
+  // Directional brushing and sparse bare-metal scratches.
+  for (let i = 0; i < 90; i++) {
+    const y = hash2(i, 0, 931) * size;
+    const x = hash2(i, 1, 932) * size;
+    const length = size * (0.04 + hash2(i, 2, 933) * 0.28);
+    colorCtx.strokeStyle =
+      hash2(i, 3, 934) > 0.7 ? "rgba(220,225,230,0.20)" : "rgba(18,20,22,0.18)";
+    colorCtx.lineWidth = 0.45 + hash2(i, 4, 935);
+    colorCtx.beginPath();
+    colorCtx.moveTo(x, y);
+    colorCtx.lineTo(Math.min(size, x + length), y + (hash2(i, 5, 936) - 0.5) * 2);
+    colorCtx.stroke();
+
+    roughCtx.strokeStyle = "rgba(38,38,38,0.18)";
+    roughCtx.lineWidth = 1;
+    roughCtx.beginPath();
+    roughCtx.moveTo(x, y);
+    roughCtx.lineTo(Math.min(size, x + length), y);
+    roughCtx.stroke();
+  }
+
+  map.needsUpdate = true;
+  roughnessMap.needsUpdate = true;
+}
+
 export function asphaltTexture(size = 512): {
   map: THREE.CanvasTexture;
   normalMap: THREE.CanvasTexture;
   roughnessMap: THREE.CanvasTexture;
 } {
   // Mid-grey grit — dark enough for night ops, light enough to read under moon
-  return {
+  const result = {
     map: proceduralColorMap(size, [48, 50, 54], 22, 11),
     normalMap: proceduralNormalMap(size, 1.15, 12),
     roughnessMap: proceduralRoughnessMap(size, 0.86, 0.16, 13),
   };
+  drawAsphaltWear(result.map, result.roughnessMap, size);
+  return result;
 }
 
 export function concreteTexture(size = 512): {
@@ -144,11 +309,13 @@ export function concreteTexture(size = 512): {
   normalMap: THREE.CanvasTexture;
   roughnessMap: THREE.CanvasTexture;
 } {
-  return {
+  const result = {
     map: proceduralColorMap(size, [142, 138, 128], 30, 21),
     normalMap: proceduralNormalMap(size, 1.35, 22),
     roughnessMap: proceduralRoughnessMap(size, 0.86, 0.14, 23),
   };
+  drawConcreteWear(result.map, result.roughnessMap, size);
+  return result;
 }
 
 export function metalTexture(size = 256): {
@@ -156,11 +323,13 @@ export function metalTexture(size = 256): {
   normalMap: THREE.CanvasTexture;
   roughnessMap: THREE.CanvasTexture;
 } {
-  return {
+  const result = {
     map: proceduralColorMap(size, [96, 100, 108], 16, 31),
     normalMap: proceduralNormalMap(size, 0.5, 32),
     roughnessMap: proceduralRoughnessMap(size, 0.5, 0.22, 33),
   };
+  drawMetalWear(result.map, result.roughnessMap, size);
+  return result;
 }
 
 export function woodTexture(size = 256): {
@@ -173,8 +342,12 @@ export function woodTexture(size = 256): {
   const img = ctx.createImageData(size, size);
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      const grain = fbm((x / size) * 2, (y / size) * 28, 5, 41);
-      const ring = Math.sin((x / size) * Math.PI * 6 + grain * 3) * 0.5 + 0.5;
+      const u = x / size;
+      const v = y / size;
+      const grain = fbm(u, v, 5, 41, 9);
+      const longGrain = fbm(u, v, 3, 48, 3);
+      const ring =
+        Math.sin(v * Math.PI * 30 + longGrain * 5 + Math.sin(u * Math.PI * 4) * 0.5) * 0.5 + 0.5;
       const i = (y * size + x) * 4;
       img.data[i] = Math.floor(55 + ring * 40 + grain * 20);
       img.data[i + 1] = Math.floor(38 + ring * 25 + grain * 12);
@@ -232,7 +405,7 @@ export function moonGlowTexture(size = 256): THREE.CanvasTexture {
       const dy = y - cy;
       const d = Math.sqrt(dx * dx + dy * dy);
       if (d > r * 0.92) continue;
-      const n = noise2(x * 0.08, y * 0.08, 77);
+      const n = hash2(Math.floor(x * 0.08), Math.floor(y * 0.08), 77);
       if (n < 0.55) continue;
       const i = (y * size + x) * 4;
       const shade = (n - 0.55) * 28;

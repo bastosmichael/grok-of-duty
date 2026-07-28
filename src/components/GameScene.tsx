@@ -15,7 +15,6 @@ interface Props {
 export default function GameScene({ onExit }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const [hud, setHud] = useState<GameHudState>({ ...DEFAULT_HUD });
-  const hudRef = useRef(hud);
   const playerRef = useRef<ReturnType<typeof createPlayer> | null>(null);
   const audioRef = useRef<ReturnType<typeof createAudio> | null>(null);
   const gfxRef = useRef<ReturnType<typeof createRenderer> | null>(null);
@@ -28,7 +27,6 @@ export default function GameScene({ onExit }: Props) {
         next.killFeed = partial.killFeed;
       }
       // Decay fields are driven by RAF; just store peaks
-      hudRef.current = next;
       return next;
     });
   }, []);
@@ -195,19 +193,46 @@ export default function GameScene({ onExit }: Props) {
       window.addEventListener("resize", onResize);
       disposers.push(() => window.removeEventListener("resize", onResize));
 
-      // Sim clock — single owner of getDelta(); renderer uses wall-clock for cinematic
+      // Sim timer — one update per frame, safe across page visibility changes.
       const clock = gfx.clock;
-      if (!clock.running) clock.start();
+      clock.reset();
+      let lastLockState: boolean | null = null;
+      let pausedRenderTime = 0;
 
-      const tick = () => {
+      const tick = (timestamp?: number) => {
         if (disposed) return;
+        clock.update(timestamp);
         const dt = Math.min(clock.getDelta(), 0.05);
-        const elapsed = clock.elapsedTime;
+        const elapsed = clock.getElapsed();
+        const isPlaying = player.isLocked();
 
-        lights.update(dt, elapsed);
-        world.update(dt, elapsed);
-        player.update(dt);
-        combat.update(dt, player.getPosition());
+        if (isPlaying !== lastLockState) {
+          gfx.setUsePost(isPlaying);
+          audio.setAmbient(isPlaying);
+          lastLockState = isPlaying;
+        }
+
+        // Pointer-lock loss is a full simulation pause. The world continues at
+        // a cinematic 20 fps behind the briefing while player state, reloading,
+        // regeneration, enemy AI, and damage remain frozen.
+        if (isPlaying) {
+          pausedRenderTime = 0;
+          lights.update(dt, elapsed);
+          world.update(dt, elapsed);
+          player.update(dt);
+          combat.update(dt, player.getPosition());
+        } else {
+          player.update(0);
+          pausedRenderTime += dt;
+          if (pausedRenderTime < 0.05) {
+            raf = requestAnimationFrame(tick);
+            return;
+          }
+          const presentationDt = Math.min(pausedRenderTime, 0.1);
+          pausedRenderTime = 0;
+          lights.update(presentationDt, elapsed);
+          world.update(presentationDt, elapsed);
+        }
 
         // Decay HUD flash timers (kill/HS flags stick until marker fades out)
         if (hitMarkerT > 0) {
@@ -243,7 +268,16 @@ export default function GameScene({ onExit }: Props) {
       raf = requestAnimationFrame(tick);
     };
 
-    void boot();
+    void boot().catch((error: unknown) => {
+      if (disposed) return;
+      console.error("Game deployment failed", error);
+      mergeHud({
+        loading: true,
+        loadProgress: 0,
+        loadLabel: "Deployment failed · reload to retry",
+        ready: false,
+      });
+    });
 
     return () => {
       disposed = true;
@@ -263,13 +297,15 @@ export default function GameScene({ onExit }: Props) {
     };
   }, [mergeHud]);
 
-  const handleEngage = useCallback(async () => {
+  const handleEngage = useCallback(() => {
+    // Pointer lock must be requested synchronously inside the trusted click.
+    playerRef.current?.requestLock();
     const audio = audioRef.current;
     if (audio) {
-      await audio.resume();
-      audio.setAmbient(true);
+      void audio.resume().catch(() => {
+        // The simulation remains playable without Web Audio; another click can retry.
+      });
     }
-    playerRef.current?.requestLock();
   }, []);
 
   const handleExit = useCallback(() => {
@@ -293,6 +329,10 @@ export default function GameScene({ onExit }: Props) {
 
 function yieldFrame(): Promise<void> {
   return new Promise((resolve) => {
-    requestAnimationFrame(() => resolve());
+    // Background tabs may throttle requestAnimationFrame to one callback per
+    // second (or suspend it entirely), which used to strand deployment midway.
+    // A task yield still lets React publish each loading stage without making
+    // game startup depend on the tab's visibility.
+    setTimeout(resolve, 0);
   });
 }

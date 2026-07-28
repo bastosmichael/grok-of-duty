@@ -4,16 +4,18 @@ import type { Collider } from "@/game/types";
 /** Shared FPS capsule / AABB physics used by the player controller. */
 
 export const PHYSICS = {
-  walkSpeed: 5.4,
-  sprintMult: 1.55,
-  crouchMult: 0.48,
-  adsMult: 0.7,
-  accelGround: 48,
-  accelAir: 14,
-  frictionGround: 18,
-  frictionAir: 1.2,
-  jumpVelocity: 7.4,
-  gravity: 24,
+  walkSpeed: 5.7,
+  sprintMult: 1.52,
+  crouchMult: 0.52,
+  adsMult: 0.72,
+  /** Exponential response rate toward the requested ground velocity. */
+  accelGround: 17,
+  /** Quake-style air acceleration, in metres per second squared. */
+  accelAir: 11,
+  frictionGround: 15,
+  frictionAir: 0.25,
+  jumpVelocity: 7.15,
+  gravity: 23,
   groundY: 0,
   radius: 0.35,
   standHeight: 1.7,
@@ -70,6 +72,23 @@ const _boxMax = new THREE.Vector3();
 const _probe = new THREE.Vector3();
 const _stepped = new THREE.Vector3();
 
+/**
+ * Test a stance without mutating the body. This prevents uncrouching through
+ * low ceilings while still allowing the camera and capsule to ease naturally.
+ */
+export function canOccupyHeight(
+  position: THREE.Vector3,
+  colliders: Collider[],
+  height: number,
+  radius = PHYSICS.radius,
+): boolean {
+  setAabb(position, height, radius, _boxMin, _boxMax);
+  for (const c of colliders) {
+    if (aabbOverlap(_boxMin, _boxMax, c.min, c.max)) return false;
+  }
+  return true;
+}
+
 export function resolveBody(
   body: PhysicsBody,
   colliders: Collider[],
@@ -84,42 +103,49 @@ export function resolveBody(
   const boxMin = _boxMin;
   const boxMax = _boxMax;
 
-  // --- Horizontal accel / friction ---
+  // --- Horizontal acceleration / friction ---
   const onGround = body.grounded;
-  const accel = onGround ? PHYSICS.accelGround : PHYSICS.accelAir;
-  const friction = onGround ? PHYSICS.frictionGround : PHYSICS.frictionAir;
-
   const targetX = wishDir.x * speed;
   const targetZ = wishDir.z * speed;
+  const hasWish = wishDir.lengthSq() > 0.0001;
 
-  // Friction when no wish or opposite
   if (onGround) {
-    const hvx = velocity.x;
-    const hvz = velocity.z;
-    const hSpeed = Math.hypot(hvx, hvz);
-    if (hSpeed > 0.01) {
-      const drop = Math.min(hSpeed, friction * dt);
-      const scale = (hSpeed - drop) / hSpeed;
-      velocity.x *= scale;
-      velocity.z *= scale;
+    if (hasWish) {
+      // A fast exponential response feels immediate without being frame-rate
+      // dependent or applying braking against acceleration every tick.
+      const response = 1 - Math.exp(-PHYSICS.accelGround * dt);
+      velocity.x = THREE.MathUtils.lerp(velocity.x, targetX, response);
+      velocity.z = THREE.MathUtils.lerp(velocity.z, targetZ, response);
     } else {
-      velocity.x = 0;
-      velocity.z = 0;
+      const brake = Math.exp(-PHYSICS.frictionGround * dt);
+      velocity.x *= brake;
+      velocity.z *= brake;
+      if (Math.hypot(velocity.x, velocity.z) < 0.025) {
+        velocity.x = 0;
+        velocity.z = 0;
+      }
     }
   } else {
-    velocity.x *= Math.max(0, 1 - friction * dt * 0.15);
-    velocity.z *= Math.max(0, 1 - friction * dt * 0.15);
-  }
-
-  // Accelerate toward wish
-  const ax = targetX - velocity.x;
-  const az = targetZ - velocity.z;
-  const aLen = Math.hypot(ax, az);
-  if (aLen > 0.0001) {
-    const maxDelta = accel * dt;
-    const scale = Math.min(1, maxDelta / aLen);
-    velocity.x += ax * scale;
-    velocity.z += az * scale;
+    // Preserve jump momentum but allow a modest amount of steering. Accel only
+    // along the desired direction so air strafing cannot create infinite speed.
+    const priorSpeed = Math.hypot(velocity.x, velocity.z);
+    if (hasWish) {
+      const alongWish = velocity.x * wishDir.x + velocity.z * wishDir.z;
+      const addSpeed = Math.max(0, speed - alongWish);
+      const accelSpeed = Math.min(addSpeed, PHYSICS.accelAir * dt);
+      velocity.x += wishDir.x * accelSpeed;
+      velocity.z += wishDir.z * accelSpeed;
+    }
+    const airDrag = Math.exp(-PHYSICS.frictionAir * dt);
+    velocity.x *= airDrag;
+    velocity.z *= airDrag;
+    const nextSpeed = Math.hypot(velocity.x, velocity.z);
+    const maxAirSpeed = Math.max(speed, priorSpeed);
+    if (nextSpeed > maxAirSpeed) {
+      const scale = maxAirSpeed / nextSpeed;
+      velocity.x *= scale;
+      velocity.z *= scale;
+    }
   }
 
   // Jump
@@ -160,8 +186,9 @@ export function resolveBody(
   const yHit = resolveY(position, velocity, colliders, height, r, boxMin, boxMax);
   if (yHit === "floor") grounded = true;
 
-  // Snap down to platforms when walking off micro-lips
-  if (grounded || velocity.y <= 0) {
+  // Snap only when the frame began grounded. Falling players should not be
+  // magnetically pulled onto surfaces from the full step-down distance.
+  if ((grounded || onGround) && !wantsJump && velocity.y <= 0) {
     const snapped = snapToFloor(position, colliders, height, r, boxMin, boxMax);
     if (snapped) {
       grounded = true;

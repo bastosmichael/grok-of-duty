@@ -17,6 +17,7 @@ export type CinematicUniforms = {
   uSaturation: { value: number };
   uShadowTeal: { value: number };
   uHighlightWarm: { value: number };
+  uSharpen: { value: number };
 };
 
 export type CinematicPassHandle = {
@@ -54,6 +55,8 @@ export const CinematicShader = {
     uSaturation: { value: 1.07 },
     uShadowTeal: { value: 0.028 },
     uHighlightWarm: { value: 0.04 },
+    // Small local-contrast recovery after bloom; never enough to halo silhouettes.
+    uSharpen: { value: 0.1 },
   } satisfies CinematicUniforms,
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -75,6 +78,7 @@ export const CinematicShader = {
     uniform float uSaturation;
     uniform float uShadowTeal;
     uniform float uHighlightWarm;
+    uniform float uSharpen;
 
     varying vec2 vUv;
 
@@ -113,6 +117,19 @@ export const CinematicShader = {
       float g = texture2D(tDiffuse, uv).g;
       float b = texture2D(tDiffuse, uv - dir * ca).b;
       vec3 color = vec3(r, g, b);
+
+      // Conservative cross-kernel detail recovery. HDR practicals are masked
+      // so their bloom stays smooth and natural.
+      vec2 texel = 1.0 / max(uResolution, vec2(1.0));
+      vec3 neighborAverage = (
+        texture2D(tDiffuse, uv + vec2(texel.x, 0.0)).rgb +
+        texture2D(tDiffuse, uv - vec2(texel.x, 0.0)).rgb +
+        texture2D(tDiffuse, uv + vec2(0.0, texel.y)).rgb +
+        texture2D(tDiffuse, uv - vec2(0.0, texel.y)).rgb
+      ) * 0.25;
+      float preLuma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+      float sharpenMask = 1.0 - smoothstep(0.55, 1.35, preLuma);
+      color += (color - neighborAverage) * uSharpen * sharpenMask;
 
       // Mild contrast pivot around mid-grey (keeps blacks deep, mids readable)
       color = (color - 0.5) * uContrast + 0.5;
@@ -169,6 +186,7 @@ export function createCinematicPass(width = 1, height = 1): CinematicPassHandle 
     uSaturation: { value: 1.07 },
     uShadowTeal: { value: 0.028 },
     uHighlightWarm: { value: 0.04 },
+    uSharpen: { value: 0.1 },
   };
 
   const material = new THREE.ShaderMaterial({

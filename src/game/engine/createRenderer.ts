@@ -11,7 +11,7 @@ export type GameRenderer = {
   camera: THREE.PerspectiveCamera;
   renderer: THREE.WebGLRenderer;
   composer: EffectComposer;
-  clock: THREE.Clock;
+  clock: THREE.Timer;
   setExposure: (v: number) => void;
   setBloomStrength: (v: number) => void;
   flashDamage: (amount: number) => void;
@@ -48,6 +48,10 @@ const NIGHT_FOG_DENSITY = 0.0022;
 
 /** Cap DPR — full 2× + bloom + SMAA tanks laptop GPUs with little visual gain */
 const MAX_PIXEL_RATIO = 1.75;
+const MIN_RENDER_SCALE = 0.7;
+const QUALITY_SAMPLE_FRAMES = 150;
+const SLOW_FRAME_MS = 19.5;
+const FAST_FRAME_MS = 14.2;
 
 /**
  * AAA night-ops WebGL stack: ACES filmic tonemap, soft shadows,
@@ -77,8 +81,9 @@ export function createRenderer(mount: HTMLElement): GameRenderer {
     alpha: false,
     stencil: false,
     depth: true,
-    // Allows canvas pixel reads / screenshots without a blank backbuffer
-    preserveDrawingBuffer: true,
+    // Avoid retaining a full extra backbuffer every frame; browser screenshots
+    // and composer presentation do not require it.
+    preserveDrawingBuffer: false,
   });
   renderer.setPixelRatio(pixelRatio);
   renderer.setSize(width, height, false);
@@ -89,7 +94,9 @@ export function createRenderer(mount: HTMLElement): GameRenderer {
   renderer.toneMapping = THREE.NoToneMapping;
   renderer.toneMappingExposure = DEFAULT_EXPOSURE;
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // PCFSoftShadowMap is deprecated in current Three.js; PCF with the moon's
+  // tuned radius/bias provides supported filtered contact shadows.
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   // Composer owns present; avoid double-clear fighting the final blit
   renderer.autoClear = true;
 
@@ -147,11 +154,37 @@ export function createRenderer(mount: HTMLElement): GameRenderer {
   };
   composer.addPass(outputPass);
 
-  // Autostart false — GameScene owns the sim clock lifecycle
-  const clock = new THREE.Clock(false);
+  // Timer avoids Clock's deprecated, read-mutates-time semantics and handles
+  // background-tab visibility without producing a giant resume delta.
+  const clock = new THREE.Timer();
+  clock.connect(document);
 
   /** Independent wall-clock for cinematic decay so GameScene.getDelta() cannot starve it */
   let lastPresentMs = performance.now();
+  let frameTimeAverage = 16.67;
+  let qualityFrames = 0;
+  let renderScale = 1;
+  let lastQualityChangeMs = lastPresentMs;
+
+  const activePixelRatio = (): number =>
+    Math.max(0.65, Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO) * renderScale);
+
+  const resizeTargets = (): void => {
+    const w = Math.max(1, mount.clientWidth || window.innerWidth);
+    const h = Math.max(1, mount.clientHeight || window.innerHeight);
+    const pr = activePixelRatio();
+
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+
+    renderer.setPixelRatio(pr);
+    renderer.setSize(w, h, false);
+
+    composer.setPixelRatio(pr);
+    composer.setSize(w, h);
+
+    cinematic.setSize(w * pr, h * pr);
+  };
 
   const setExposure = (v: number): void => {
     renderer.toneMappingExposure = Math.max(0, v);
@@ -166,21 +199,7 @@ export function createRenderer(mount: HTMLElement): GameRenderer {
   };
 
   const resize = (): void => {
-    const w = Math.max(1, mount.clientWidth || window.innerWidth);
-    const h = Math.max(1, mount.clientHeight || window.innerHeight);
-    const pr = Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO);
-
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
-
-    renderer.setPixelRatio(pr);
-    renderer.setSize(w, h, false);
-
-    composer.setPixelRatio(pr);
-    composer.setSize(w, h);
-
-    bloomPass.resolution.set(w, h);
-    cinematic.setSize(w, h);
+    resizeTargets();
   };
 
   let usePost = true;
@@ -189,8 +208,30 @@ export function createRenderer(mount: HTMLElement): GameRenderer {
     const now = performance.now();
     const delta = Math.min((now - lastPresentMs) / 1000, 0.05);
     lastPresentMs = now;
-    const elapsed = clock.running ? clock.elapsedTime : now * 0.001;
+    const elapsed = clock.getElapsed();
     cinematic.update(delta, elapsed);
+
+    // Dynamic resolution only reacts to sustained load, with long cooldowns to
+    // prevent visible oscillation. Post effects stay enabled; GPU fill-rate is
+    // reduced before sacrificing the authored grade.
+    if (delta > 0 && document.visibilityState === "visible") {
+      const frameMs = delta * 1000;
+      frameTimeAverage = THREE.MathUtils.lerp(frameTimeAverage, frameMs, 0.035);
+      qualityFrames += 1;
+      if (qualityFrames >= QUALITY_SAMPLE_FRAMES && now - lastQualityChangeMs > 4000) {
+        const previousScale = renderScale;
+        if (frameTimeAverage > SLOW_FRAME_MS && renderScale > MIN_RENDER_SCALE) {
+          renderScale = Math.max(MIN_RENDER_SCALE, renderScale - 0.1);
+        } else if (frameTimeAverage < FAST_FRAME_MS && renderScale < 1) {
+          renderScale = Math.min(1, renderScale + 0.05);
+        }
+        if (renderScale !== previousScale) {
+          lastQualityChangeMs = now;
+          resizeTargets();
+        }
+        qualityFrames = 0;
+      }
+    }
 
     if (!usePost) {
       // Direct path: single ACES present (proves lighting/materials without composer)
@@ -207,7 +248,7 @@ export function createRenderer(mount: HTMLElement): GameRenderer {
   };
 
   const dispose = (): void => {
-    clock.stop();
+    clock.dispose();
     cinematic.dispose();
     bloomPass.dispose();
     smaaPass.dispose();

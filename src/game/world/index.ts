@@ -17,6 +17,7 @@ export {
   makeDistantHill,
   makeStarfieldAndMoon,
   makeSpawnPlazaMarkings,
+  makeSurfaceDetails,
   makeGateFrame,
   makeCollider,
   type PropResult,

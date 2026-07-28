@@ -1,12 +1,17 @@
 import * as THREE from "three";
-import type { Enemy } from "@/game/types";
+import type { Collider, Enemy } from "@/game/types";
+import { raycastColliders } from "@/game/player/physics";
 
 const SEEK_RANGE = 48;
-const ATTACK_RANGE = 2.0;
-const ATTACK_DAMAGE = 14;
-const ATTACK_COOLDOWN = 0.75;
+const MELEE_RANGE = 1.8;
+const MELEE_DAMAGE = 18;
+const MELEE_COOLDOWN = 0.95;
+const FIRE_MIN_RANGE = 4;
+const FIRE_MAX_RANGE = 34;
+const FIRE_DAMAGE = 8;
+const FIRE_COOLDOWN = 1.05;
 const DEFAULT_HP = 85;
-const DEFAULT_SPEED = 3.8;
+const DEFAULT_SPEED = 3.55;
 const SPAWN_COUNT = 10;
 const DEATH_SINK_DURATION = 0.75;
 const RESPAWN_DELAY = 2.1;
@@ -19,6 +24,10 @@ const _knock = new THREE.Vector3();
 const _look = new THREE.Vector3();
 const _flashWhite = new THREE.Color(0xffffff);
 const _fromPos = new THREE.Vector3();
+const _shotEnd = new THREE.Vector3();
+const _shotDir = new THREE.Vector3();
+const _candidate = new THREE.Vector3();
+const _separation = new THREE.Vector3();
 
 export type EnemySystemOpts = {
   /** amount, attacker world position for damage direction */
@@ -26,6 +35,15 @@ export type EnemySystemOpts = {
   count?: number;
   /** Avoid spawning near this point (player spawn). Defaults to origin. */
   playerSpawn?: THREE.Vector3;
+  /** World solids used for spawn safety, movement, and line-of-sight. */
+  colliders?: Collider[];
+  /** Cosmetic enemy tracer callback. `hit` means the shot damaged the player. */
+  onEnemyShot?: (
+    origin: THREE.Vector3,
+    end: THREE.Vector3,
+    hit: boolean,
+    impactNormal?: THREE.Vector3,
+  ) => void;
 };
 
 export type EnemySystem = {
@@ -59,6 +77,9 @@ type EnemyRuntime = Enemy & {
   savedEmissive: THREE.Color[];
   savedEmissiveIntensity: number[];
   teamHue: number;
+  knockVelocity: THREE.Vector3;
+  staggerTimer: number;
+  moveBlend: number;
 };
 
 let nextEnemyId = 1;
@@ -192,10 +213,28 @@ function buildOperatorMesh(variant: number): {
     mesh.position.set(x, y, z);
     mesh.scale.set(sx, sy, sz);
     mesh.rotation.set(rotX, rotY, rotZ);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    const majorSilhouette =
+      geometry === geo.torso ||
+      geometry === geo.head ||
+      geometry === geo.limb ||
+      geometry === geo.leg ||
+      geometry === geo.shoulder ||
+      geometry === geo.weapon;
+    mesh.castShadow = majorSilhouette;
+    mesh.receiveShadow = majorSilhouette;
+    mesh.updateMatrix();
+    mesh.matrixAutoUpdate = false;
     group.add(mesh);
-    bodyParts.push(mesh);
+    // Keep hit registration generous on the actual silhouette without
+    // ray-testing every pouch, rail, and decorative nub on every shot.
+    if (
+      majorSilhouette ||
+      geometry === geo.visor ||
+      geometry === geo.barrel ||
+      geometry === geo.boot
+    ) {
+      bodyParts.push(mesh);
+    }
     return mesh;
   };
 
@@ -254,23 +293,49 @@ function buildOperatorMesh(variant: number): {
   return { group, bodyParts, headMesh, materials, teamHue: accentHex };
 }
 
-function randomSpawnPosition(playerSpawn: THREE.Vector3, out: THREE.Vector3): THREE.Vector3 {
+function canEnemyOccupy(position: THREE.Vector3, colliders: Collider[]): boolean {
+  const radius = 0.42;
+  for (const c of colliders) {
+    // Ignore ground/floor volumes the operator is intended to stand on.
+    if (c.max.y <= 0.12 || c.min.y >= 1.9) continue;
+    if (
+      position.x + radius > c.min.x &&
+      position.x - radius < c.max.x &&
+      position.z + radius > c.min.z &&
+      position.z - radius < c.max.z
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function randomSpawnPosition(
+  playerSpawn: THREE.Vector3,
+  out: THREE.Vector3,
+  colliders: Collider[],
+): THREE.Vector3 {
   for (let attempt = 0; attempt < 40; attempt++) {
     const x = (Math.random() - 0.5) * 2 * MAP_HALF;
     const z = (Math.random() - 0.5) * 2 * MAP_HALF;
     const dx = x - playerSpawn.x;
     const dz = z - playerSpawn.z;
     if (dx * dx + dz * dz >= PLAYER_SPAWN_CLEAR * PLAYER_SPAWN_CLEAR) {
-      return out.set(x, 0, z);
+      out.set(x, 0, z);
+      if (canEnemyOccupy(out, colliders)) return out;
     }
   }
   return out.set(MAP_HALF * 0.7, 0, MAP_HALF * 0.7);
 }
 
-function createEnemyRuntime(scene: THREE.Scene, playerSpawn: THREE.Vector3): EnemyRuntime {
+function createEnemyRuntime(
+  scene: THREE.Scene,
+  playerSpawn: THREE.Vector3,
+  colliders: Collider[],
+): EnemyRuntime {
   const variant = nextEnemyId;
   const { group, bodyParts, headMesh, materials, teamHue } = buildOperatorMesh(variant);
-  const pos = randomSpawnPosition(playerSpawn, new THREE.Vector3());
+  const pos = randomSpawnPosition(playerSpawn, new THREE.Vector3(), colliders);
   group.position.copy(pos);
 
   const savedColors = materials.map((m) => m.color.clone());
@@ -299,6 +364,9 @@ function createEnemyRuntime(scene: THREE.Scene, playerSpawn: THREE.Vector3): Ene
     savedEmissive,
     savedEmissiveIntensity,
     teamHue,
+    knockVelocity: new THREE.Vector3(),
+    staggerTimer: 0,
+    moveBlend: 0,
   };
 
   group.userData.enemyId = enemy.id;
@@ -328,7 +396,7 @@ function applyHitFlashVisual(e: EnemyRuntime, t: number): void {
   }
 }
 
-function respawnEnemy(e: EnemyRuntime, playerSpawn: THREE.Vector3): void {
+function respawnEnemy(e: EnemyRuntime, playerSpawn: THREE.Vector3, colliders: Collider[]): void {
   e.alive = true;
   e.collapsing = false;
   e.hp = e.maxHp;
@@ -336,12 +404,15 @@ function respawnEnemy(e: EnemyRuntime, playerSpawn: THREE.Vector3): void {
   e.deathTimer = 0;
   e.respawnTimer = 0;
   e.attackCooldown = 0.35;
+  e.staggerTimer = 0;
+  e.moveBlend = 0;
+  e.knockVelocity.set(0, 0, 0);
   e.strafePhase = Math.random() * Math.PI * 2;
   e.behavior = Math.floor(Math.random() * 3);
   e.mesh.rotation.set(0.04, Math.random() * Math.PI * 2, 0);
   e.mesh.scale.set(1, 1, 1);
   e.mesh.visible = true;
-  randomSpawnPosition(playerSpawn, e.mesh.position);
+  randomSpawnPosition(playerSpawn, e.mesh.position, colliders);
   e.mesh.position.y = e.baseY;
   restoreMaterials(e);
 }
@@ -353,19 +424,22 @@ function respawnEnemy(e: EnemyRuntime, playerSpawn: THREE.Vector3): void {
 export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): EnemySystem {
   const count = opts.count ?? SPAWN_COUNT;
   const playerSpawn = (opts.playerSpawn ?? new THREE.Vector3(0, 0, 0)).clone();
+  const colliders = opts.colliders ?? [];
   const enemies: EnemyRuntime[] = [];
   const byId = new Map<number, EnemyRuntime>();
 
   for (let i = 0; i < count; i++) {
-    const e = createEnemyRuntime(scene, playerSpawn);
+    const e = createEnemyRuntime(scene, playerSpawn, colliders);
     enemies.push(e);
     byId.set(e.id, e);
   }
 
   const raycastList: THREE.Object3D[] = [];
+  let combatTime = 0;
 
   const update = (dt: number, playerPos: THREE.Vector3): void => {
     const safeDt = Math.min(dt, 0.05);
+    combatTime += safeDt;
 
     for (const e of enemies) {
       if (!e.alive) {
@@ -384,7 +458,7 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
         } else if (e.respawnTimer > 0) {
           e.respawnTimer -= safeDt;
           if (e.respawnTimer <= 0) {
-            respawnEnemy(e, playerSpawn);
+            respawnEnemy(e, playerSpawn, colliders);
           }
         }
         continue;
@@ -396,6 +470,17 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
         applyHitFlashVisual(e, e.hitFlash);
         if (e.hitFlash <= 0) restoreMaterials(e);
       }
+      e.staggerTimer = Math.max(0, e.staggerTimer - safeDt);
+
+      if (e.knockVelocity.lengthSq() > 0.0004) {
+        _candidate.copy(e.mesh.position).addScaledVector(e.knockVelocity, safeDt);
+        if (canEnemyOccupy(_candidate, colliders)) {
+          e.mesh.position.copy(_candidate);
+        }
+        e.knockVelocity.multiplyScalar(Math.exp(-9 * safeDt));
+      } else {
+        e.knockVelocity.set(0, 0, 0);
+      }
 
       _toPlayer.set(playerPos.x - e.mesh.position.x, 0, playerPos.z - e.mesh.position.z);
       const dist = _toPlayer.length();
@@ -406,45 +491,103 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
         e.strafePhase += safeDt * (1.4 + (e.id % 5) * 0.18);
         _strafe.set(-_toPlayer.z, 0, _toPlayer.x);
 
-        // Behavior variants so the pack doesn't move as one blob
+        // Behavior variants use different engagement distances, producing a
+        // readable mix of flankers, riflemen, and close-range pressure.
         let strafeAmt = Math.sin(e.strafePhase) * 0.7;
-        let approach = 1;
+        let preferredRange = 6;
         if (e.behavior === 1) {
-          // Circler — more lateral
+          // Flanker — holds mid range and commits to wide lateral paths.
           strafeAmt = Math.sin(e.strafePhase * 1.3) * 1.15;
-          approach = dist < 8 ? 0.35 : 0.85;
+          preferredRange = 12;
         } else if (e.behavior === 2) {
-          // Pause-burst rusher
-          const pulse = 0.55 + 0.45 * Math.sin(e.strafePhase * 0.7);
-          approach = pulse;
+          // Rifleman — anchors at range with short repositioning bursts.
+          preferredRange = 19;
           strafeAmt *= 0.4;
         }
 
-        const moveSpeed = e.speed * safeDt * approach;
-        if (dist > ATTACK_RANGE * 0.95) {
-          e.mesh.position.x += (_toPlayer.x * approach + _strafe.x * strafeAmt) * moveSpeed;
-          e.mesh.position.z += (_toPlayer.z * approach + _strafe.z * strafeAmt) * moveSpeed;
-        } else {
-          // Orbit while in melee range
-          e.mesh.position.x += _strafe.x * strafeAmt * moveSpeed * 0.7;
-          e.mesh.position.z += _strafe.z * strafeAmt * moveSpeed * 0.7;
+        const rangeDelta = dist - preferredRange;
+        const approach = THREE.MathUtils.clamp(rangeDelta / 4, -0.72, 1);
+        const repositionPulse =
+          e.behavior === 2 ? 0.35 + Math.max(0, Math.sin(e.strafePhase * 0.7)) * 0.65 : 1;
+        const staggerMult = e.staggerTimer > 0 ? 0.18 : 1;
+        const moveSpeed = e.speed * safeDt * repositionPulse * staggerMult;
+
+        _separation.set(0, 0, 0);
+        for (const other of enemies) {
+          if (other === e || !other.alive) continue;
+          const dx = e.mesh.position.x - other.mesh.position.x;
+          const dz = e.mesh.position.z - other.mesh.position.z;
+          const d2 = dx * dx + dz * dz;
+          if (d2 > 0.001 && d2 < 1.5) {
+            const strength = (1.5 - d2) / 1.5;
+            _separation.x += (dx / Math.sqrt(d2)) * strength;
+            _separation.z += (dz / Math.sqrt(d2)) * strength;
+          }
         }
 
-        // Bob run cycle
-        e.mesh.position.y = e.baseY + Math.abs(Math.sin(e.strafePhase * 2.2)) * 0.04;
+        const moveX =
+          (_toPlayer.x * approach + _strafe.x * strafeAmt + _separation.x * 0.8) * moveSpeed;
+        const moveZ =
+          (_toPlayer.z * approach + _strafe.z * strafeAmt + _separation.z * 0.8) * moveSpeed;
+        _candidate.copy(e.mesh.position);
+        _candidate.x += moveX;
+        if (canEnemyOccupy(_candidate, colliders)) e.mesh.position.x = _candidate.x;
+        _candidate.copy(e.mesh.position);
+        _candidate.z += moveZ;
+        if (canEnemyOccupy(_candidate, colliders)) e.mesh.position.z = _candidate.z;
+        e.mesh.position.x = THREE.MathUtils.clamp(e.mesh.position.x, -MAP_HALF, MAP_HALF);
+        e.mesh.position.z = THREE.MathUtils.clamp(e.mesh.position.z, -MAP_HALF, MAP_HALF);
+
+        const moving = Math.abs(moveX) + Math.abs(moveZ) > 0.002;
+        e.moveBlend = THREE.MathUtils.damp(e.moveBlend, moving ? 1 : 0, 8, safeDt);
+        // Restrained gear-weighted run cycle.
+        e.mesh.position.y = e.baseY + Math.abs(Math.sin(e.strafePhase * 2.2)) * 0.045 * e.moveBlend;
 
         _look.set(playerPos.x, e.mesh.position.y + 1.25, playerPos.z);
         e.mesh.lookAt(_look);
         e.mesh.rotation.x = 0.04;
       }
 
-      // Melee attack
+      // Close strike or paced rifle fire. Only a rotating subset of the squad
+      // may fire at once so pressure stays intense without becoming unfair.
       e.attackCooldown = Math.max(0, e.attackCooldown - safeDt);
-      if (dist <= ATTACK_RANGE && e.attackCooldown <= 0) {
-        e.attackCooldown = ATTACK_COOLDOWN + Math.random() * 0.18;
+      if (dist <= MELEE_RANGE && e.attackCooldown <= 0) {
+        e.attackCooldown = MELEE_COOLDOWN + Math.random() * 0.22;
         _fromPos.copy(e.mesh.position);
         _fromPos.y += 1.2;
-        opts.onPlayerDamage(ATTACK_DAMAGE, _fromPos);
+        opts.onPlayerDamage(MELEE_DAMAGE, _fromPos);
+      } else if (
+        dist >= FIRE_MIN_RANGE &&
+        dist <= FIRE_MAX_RANGE &&
+        e.attackCooldown <= 0 &&
+        e.staggerTimer <= 0 &&
+        (e.id + Math.floor(combatTime * 0.7)) % 3 === 0
+      ) {
+        _fromPos.copy(e.mesh.position);
+        _fromPos.y += 1.18;
+        _shotDir.set(playerPos.x, playerPos.y + 1.22, playerPos.z).sub(_fromPos);
+        const shotDistance = _shotDir.length();
+        _shotDir.normalize();
+        const coverHit = colliders.length
+          ? raycastColliders(_fromPos, _shotDir, colliders, shotDistance)
+          : null;
+
+        e.attackCooldown = FIRE_COOLDOWN + Math.random() * 0.55 + (e.behavior === 2 ? -0.12 : 0.12);
+        if (coverHit && coverHit.t < shotDistance - 0.25) {
+          opts.onEnemyShot?.(_fromPos, coverHit.point, false, coverHit.normal);
+        } else {
+          const accuracy = THREE.MathUtils.clamp(0.78 - shotDistance * 0.014, 0.3, 0.7);
+          const hit = Math.random() < accuracy;
+          _shotEnd.set(playerPos.x, playerPos.y + 1.15, playerPos.z);
+          if (!hit) {
+            const missRadius = 0.65 + shotDistance * 0.018;
+            _shotEnd.x += (Math.random() - 0.5) * missRadius * 2;
+            _shotEnd.y += (Math.random() - 0.5) * missRadius;
+            _shotEnd.z += (Math.random() - 0.5) * missRadius * 2;
+          }
+          opts.onEnemyShot?.(_fromPos, _shotEnd, hit);
+          if (hit) opts.onPlayerDamage(FIRE_DAMAGE, _fromPos);
+        }
       }
     }
   };
@@ -489,10 +632,11 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
     if (hitDir && hitDir.lengthSq() > 0) {
       _knock.copy(hitDir).setY(0);
       if (_knock.lengthSq() > 0) {
-        _knock.normalize().multiplyScalar(isHeadshot ? 0.5 : 0.32);
-        e.mesh.position.add(_knock);
+        _knock.normalize().multiplyScalar(isHeadshot ? 4.8 : 3.2);
+        e.knockVelocity.add(_knock);
       }
     }
+    e.staggerTimer = isHeadshot ? 0.28 : 0.16;
 
     if (e.hp <= 0) {
       e.hp = 0;

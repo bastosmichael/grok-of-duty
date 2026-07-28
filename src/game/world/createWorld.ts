@@ -19,6 +19,7 @@ import {
   makeStarfieldAndMoon,
   makeSpawnPlazaMarkings,
   makeGateFrame,
+  makeSurfaceDetails,
   type PropResult,
 } from "./props";
 
@@ -99,41 +100,74 @@ function createDustMotes(count: number): THREE.Points {
   return points;
 }
 
-function createGroundFog(count: number): THREE.Points {
+function createGroundFog(count: number): THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial> {
   const positions = new Float32Array(count * 3);
+  const sizes = new Float32Array(count);
+  const phases = new Float32Array(count);
   for (let i = 0; i < count; i++) {
     const ang = Math.random() * Math.PI * 2;
     const rad = 12 + Math.random() * 48;
     positions[i * 3] = Math.cos(ang) * rad;
     positions[i * 3 + 1] = 0.15 + Math.random() * 1.2;
     positions[i * 3 + 2] = Math.sin(ang) * rad;
+    sizes[i] = 3.5 + Math.random() * 5.5;
+    phases[i] = Math.random() * Math.PI * 2;
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
+  geo.setAttribute("aPhase", new THREE.BufferAttribute(phases, 1));
 
-  const c = document.createElement("canvas");
-  c.width = 64;
-  c.height = 64;
-  const ctx = c.getContext("2d")!;
-  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-  g.addColorStop(0, "rgba(80,100,130,0.5)");
-  g.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 64, 64);
-  const sprite = new THREE.CanvasTexture(c);
-
-  const mat = new THREE.PointsMaterial({
-    map: sprite,
-    size: 1.75,
+  const mat = new THREE.ShaderMaterial({
+    name: "LowGroundMist",
     transparent: true,
-    opacity: 0.075,
     depthWrite: false,
     blending: THREE.NormalBlending,
-    color: 0x6688aa,
-    sizeAttenuation: true,
+    uniforms: {
+      uTime: { value: 0 },
+      uColor: { value: new THREE.Color(0x6d89a8) },
+    },
+    vertexShader: /* glsl */ `
+      attribute float aSize;
+      attribute float aPhase;
+      uniform float uTime;
+      varying float vDistanceFade;
+      varying float vPhase;
+
+      void main() {
+        vec3 animated = position;
+        animated.x += sin(uTime * 0.07 + aPhase) * 2.2;
+        animated.z += cos(uTime * 0.055 + aPhase * 1.7) * 1.8;
+        animated.y += sin(uTime * 0.14 + aPhase * 0.8) * 0.12;
+        vec4 mvPosition = modelViewMatrix * vec4(animated, 1.0);
+        gl_Position = projectionMatrix * mvPosition;
+        gl_PointSize = clamp(aSize * (150.0 / max(-mvPosition.z, 1.0)), 5.0, 84.0);
+        vDistanceFade = 1.0 - smoothstep(32.0, 95.0, -mvPosition.z);
+        vPhase = aPhase;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform vec3 uColor;
+      uniform float uTime;
+      varying float vDistanceFade;
+      varying float vPhase;
+
+      void main() {
+        vec2 p = gl_PointCoord - 0.5;
+        p.y *= 2.4;
+        float body = 1.0 - smoothstep(0.08, 0.5, length(p));
+        float wisps = 0.72 + sin((p.x * 9.0 + p.y * 4.0) + vPhase + uTime * 0.08) * 0.28;
+        float alpha = body * wisps * vDistanceFade * 0.085;
+        if (alpha < 0.002) discard;
+        gl_FragColor = vec4(uColor, alpha);
+      }
+    `,
   });
 
-  return new THREE.Points(geo, mat);
+  const points = new THREE.Points(geo, mat);
+  points.frustumCulled = false;
+  points.renderOrder = 1;
+  return points;
 }
 
 /**
@@ -159,6 +193,9 @@ export function createWorld(scene: THREE.Scene): WorldApi {
   ground.position.y = 0;
   scene.add(ground);
   disposables.push(ground);
+
+  // ── Instanced puddles, drains, paint and rubble ──
+  addProp(scene, colliders, disposables, makeSurfaceDetails(mats));
 
   // ── Spawn plaza markings (no colliders) ──
   addProp(scene, colliders, disposables, makeSpawnPlazaMarkings(mats));
@@ -485,16 +522,16 @@ export function createWorld(scene: THREE.Scene): WorldApi {
   const poles: Array<[number, number, boolean?]> = [
     [-22, -22, true],
     [22, -22, true],
-    [-22, 22, true],
+    [-22, 22, false],
     [22, 22, true],
     [0, -30, true],
     [0, 22, false], // near HQ — engine searchlight covers
-    [-40, 0, true],
+    [-40, 0, false],
     [40, 0, true],
-    [-12, 42, true],
-    [12, -42, true],
+    [-12, 42, false],
+    [12, -42, false],
     [36, 36, true],
-    [-36, -36, true],
+    [-36, -36, false],
   ];
   for (const [x, z, withLight] of poles) {
     addProp(
@@ -668,7 +705,7 @@ export function createWorld(scene: THREE.Scene): WorldApi {
   scene.add(dust);
   disposables.push(dust);
 
-  const fogPts = createGroundFog(70);
+  const fogPts = createGroundFog(96);
   scene.add(fogPts);
   disposables.push(fogPts);
 
@@ -700,6 +737,8 @@ export function createWorld(scene: THREE.Scene): WorldApi {
       }
       dustPositions.needsUpdate = true;
       fogPts.rotation.y = elapsed * 0.01;
+      fogPts.material.uniforms.uTime!.value = elapsed;
+      mats.sky.uniforms.uTime!.value = elapsed;
     },
     dispose: () => {
       for (const obj of disposables) {

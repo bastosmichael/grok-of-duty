@@ -35,6 +35,10 @@ export type WorldMaterials = {
   hill: THREE.MeshStandardMaterial;
   barrelBlue: THREE.MeshStandardMaterial;
   barrelYellow: THREE.MeshStandardMaterial;
+  wetAsphalt: THREE.MeshPhysicalMaterial;
+  roadPaintWhite: THREE.MeshStandardMaterial;
+  roadPaintRed: THREE.MeshStandardMaterial;
+  sky: THREE.ShaderMaterial;
   moonMat: THREE.MeshBasicMaterial;
   starMat: THREE.PointsMaterial;
   dispose: () => void;
@@ -63,11 +67,13 @@ function cloneMaps(
 
 /** Shared PBR material kit for the compound — create once per world. */
 export function createWorldMaterials(): WorldMaterials {
-  const asphalt = asphaltTexture(512);
-  const concrete = concreteTexture(512);
-  const metal = metalTexture(256);
-  const wood = woodTexture(256);
-  const sandColor = proceduralColorMap(256, [92, 84, 62], 20, 55);
+  // Procedural detail + mipmaps make 256px sufficient at gameplay distance.
+  // Keeping source maps compact avoids a long synchronous boot and saves VRAM.
+  const asphalt = asphaltTexture(256);
+  const concrete = concreteTexture(256);
+  const metal = metalTexture(192);
+  const wood = woodTexture(192);
+  const sandColor = proceduralColorMap(192, [92, 84, 62], 20, 55);
   const moonTex = moonGlowTexture(256);
 
   const asphaltMaps = cloneMaps(asphalt, 36, 36);
@@ -83,8 +89,8 @@ export function createWorldMaterials(): WorldMaterials {
     roughnessMap: asphaltMaps.roughnessMap,
     roughness: 0.9,
     metalness: 0.04,
-    color: 0x555a62,
-    envMapIntensity: 0.35,
+    color: 0xa3aab4,
+    envMapIntensity: 0.5,
   });
   asphaltMat.normalScale.set(0.7, 0.7);
 
@@ -261,6 +267,118 @@ export function createWorldMaterials(): WorldMaterials {
     emissiveIntensity: 0.12,
   });
 
+  const wetAsphalt = new THREE.MeshPhysicalMaterial({
+    color: 0x111a20,
+    roughness: 0.18,
+    metalness: 0.06,
+    clearcoat: 1,
+    clearcoatRoughness: 0.12,
+    transparent: true,
+    opacity: 0.72,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    envMapIntensity: 1.2,
+  });
+
+  const roadPaintWhite = new THREE.MeshStandardMaterial({
+    color: 0xc7cbc2,
+    roughness: 0.66,
+    metalness: 0.02,
+    emissive: 0x121511,
+    emissiveIntensity: 0.12,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+  });
+
+  const roadPaintRed = new THREE.MeshStandardMaterial({
+    color: 0x7e2724,
+    roughness: 0.72,
+    metalness: 0.01,
+    emissive: 0x1b0504,
+    emissiveIntensity: 0.12,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+  });
+
+  const sky = new THREE.ShaderMaterial({
+    name: "NightAtmosphere",
+    side: THREE.BackSide,
+    depthWrite: false,
+    depthTest: false,
+    fog: false,
+    uniforms: {
+      uTime: { value: 0 },
+      uMoonDirection: { value: new THREE.Vector3(0.57, 0.7, -0.44).normalize() },
+    },
+    vertexShader: /* glsl */ `
+      varying vec3 vDirection;
+
+      void main() {
+        vDirection = normalize(position);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float uTime;
+      uniform vec3 uMoonDirection;
+      varying vec3 vDirection;
+
+      float hash(vec2 p) {
+        p = fract(p * vec2(443.8975, 441.423));
+        p += dot(p, p.yx + 19.19);
+        return fract(p.x * p.y);
+      }
+
+      float noise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        return mix(
+          mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
+          mix(hash(i + vec2(0.0, 1.0)), hash(i + 1.0), f.x),
+          f.y
+        );
+      }
+
+      float fbm(vec2 p) {
+        float value = 0.0;
+        float amplitude = 0.5;
+        for (int i = 0; i < 4; i++) {
+          value += noise(p) * amplitude;
+          p = p * 2.03 + vec2(13.1, 7.7);
+          amplitude *= 0.5;
+        }
+        return value;
+      }
+
+      void main() {
+        vec3 dir = normalize(vDirection);
+        float height = clamp(dir.y, 0.0, 1.0);
+        float horizonBlend = smoothstep(0.0, 0.48, height);
+        vec3 horizon = vec3(0.055, 0.095, 0.145);
+        vec3 zenith = vec3(0.004, 0.009, 0.025);
+        vec3 color = mix(horizon, zenith, horizonBlend);
+
+        // Broad moonlit cloud deck kept low enough to preserve target contrast.
+        float azimuth = atan(dir.z, dir.x) / 6.2831853 + 0.5;
+        vec2 cloudUv = vec2(azimuth * 5.0 + uTime * 0.0018, height * 8.0);
+        float clouds = smoothstep(0.5, 0.76, fbm(cloudUv));
+        float cloudBand = smoothstep(0.015, 0.12, height) *
+          (1.0 - smoothstep(0.36, 0.72, height));
+        color += vec3(0.035, 0.055, 0.08) * clouds * cloudBand;
+
+        float moonAlignment = max(dot(dir, uMoonDirection), 0.0);
+        color += vec3(0.12, 0.17, 0.24) * pow(moonAlignment, 32.0) * 0.32;
+        color += vec3(0.22, 0.29, 0.4) * pow(moonAlignment, 220.0) * 0.42;
+
+        // Tiny ordered-looking dither hides 8-bit gradient banding.
+        float dither = (hash(gl_FragCoord.xy + fract(uTime) * 17.0) - 0.5) / 255.0;
+        gl_FragColor = vec4(color + dither, 1.0);
+      }
+    `,
+  });
+
   const moonMat = new THREE.MeshBasicMaterial({
     map: moonTex,
     transparent: true,
@@ -324,6 +442,10 @@ export function createWorldMaterials(): WorldMaterials {
     hill,
     barrelBlue,
     barrelYellow,
+    wetAsphalt,
+    roadPaintWhite,
+    roadPaintRed,
+    sky,
     moonMat,
     starMat,
     dispose: () => {
@@ -347,6 +469,10 @@ export function createWorldMaterials(): WorldMaterials {
         hill,
         barrelBlue,
         barrelYellow,
+        wetAsphalt,
+        roadPaintWhite,
+        roadPaintRed,
+        sky,
         moonMat,
         starMat,
       ];
@@ -852,10 +978,12 @@ export function makeLightPole(
 
   // Local sodium only when requested — engine owns map key floods (avoid double wash)
   if (opts.withLight !== false) {
-    const light = new THREE.PointLight(0xffaa55, 1.45, 20, 2);
+    const light = new THREE.SpotLight(0xffaa55, 260, 20, THREE.MathUtils.degToRad(58), 0.72, 2);
     light.position.set(1.15, h - 0.4, 0);
+    light.target.position.set(1.35, 0, 0);
     light.castShadow = false;
     group.add(light);
+    group.add(light.target);
   }
 
   enableShadows(group, true, true);
@@ -945,10 +1073,8 @@ export function makeWatchTower(
   const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 8), mats.lampOrange);
   lamp.position.set(0, 10.7, 0);
   group.add(lamp);
-  // Dim local only — engine searchlight owns the sweep
-  const pl = new THREE.PointLight(0xffaa55, 0.7, 22, 2);
-  pl.position.set(0, 10.5, 0);
-  group.add(pl);
+  // Corner floods from the lighting system sell illumination; emissive tower
+  // bulbs avoid four extra forward-rendered lights.
 
   enableShadows(group);
 
@@ -1340,7 +1466,7 @@ export function makeHqTower(mats: WorldMaterials, opts: { x: number; z: number }
   const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 10), mats.lampOrange);
   lamp.position.set(0, 21.5, 0);
   group.add(lamp);
-  const pl = new THREE.PointLight(0xff9944, 1.6, 32, 2);
+  const pl = new THREE.PointLight(0xff9944, 145, 28, 2);
   pl.position.set(0, 21.2, 0);
   group.add(pl);
 
@@ -1371,6 +1497,12 @@ export function makeDistantHill(
 export function makeStarfieldAndMoon(mats: WorldMaterials): PropResult {
   const group = new THREE.Group();
   group.name = "SkyDome";
+
+  const atmosphere = new THREE.Mesh(new THREE.SphereGeometry(292, 36, 20), mats.sky);
+  atmosphere.name = "AtmosphereGradient";
+  atmosphere.renderOrder = -100;
+  atmosphere.frustumCulled = false;
+  group.add(atmosphere);
 
   // Star points on large sphere (inside surface)
   const STAR_COUNT = 1800;
@@ -1487,4 +1619,115 @@ export function makeSpawnPlazaMarkings(mats: WorldMaterials): PropResult {
   group.add(pad);
 
   return { group, colliders: [] };
+}
+
+/**
+ * Instanced ground storytelling: rain-dark puddles, drains, lane paint and
+ * small rubble. The whole pass adds only four draw calls.
+ */
+export function makeSurfaceDetails(mats: WorldMaterials): PropResult {
+  const group = new THREE.Group();
+  group.name = "SurfaceDetailPass";
+  const matrix = new THREE.Matrix4();
+  const position = new THREE.Vector3();
+  const scale = new THREE.Vector3();
+  const quaternion = new THREE.Quaternion();
+  const horizontal = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
+
+  const puddles: Array<[number, number, number, number, number]> = [
+    [-27, -20, 2.8, 1.1, 0.2],
+    [-18, 15, 2.2, 0.7, -0.4],
+    [-9, -31, 1.7, 0.65, 0.55],
+    [7, -19, 2.6, 0.85, -0.15],
+    [16, 15, 2.1, 0.8, 0.45],
+    [28, -10, 2.5, 0.72, -0.35],
+    [34, 28, 1.9, 0.65, 0.1],
+    [-38, 4, 2.3, 0.78, 0.65],
+    [1, 14, 1.6, 0.5, -0.25],
+    [4, -42, 3.2, 0.95, 0.08],
+    [-15, 40, 2.1, 0.6, -0.5],
+    [43, 8, 1.8, 0.55, 0.3],
+  ];
+  const puddleGeometry = new THREE.CircleGeometry(1, 24);
+  const puddleMesh = new THREE.InstancedMesh(puddleGeometry, mats.wetAsphalt, puddles.length);
+  puddleMesh.name = "RainPuddles";
+  puddleMesh.renderOrder = 1;
+  for (let i = 0; i < puddles.length; i++) {
+    const [x, z, sx, sz, rotation] = puddles[i]!;
+    quaternion.setFromEuler(new THREE.Euler(-Math.PI / 2, 0, rotation));
+    matrix.compose(position.set(x, 0.026, z), quaternion, scale.set(sx, sz, 1));
+    puddleMesh.setMatrixAt(i, matrix);
+  }
+  puddleMesh.instanceMatrix.needsUpdate = true;
+  group.add(puddleMesh);
+
+  const drains: Array<[number, number, number]> = [
+    [-20, -20, 0],
+    [20, -20, 0],
+    [-20, 20, Math.PI / 2],
+    [20, 20, Math.PI / 2],
+    [0, -34, Math.PI / 2],
+    [31, 3, 0.2],
+    [-32, 8, -0.2],
+    [8, 31, Math.PI / 2],
+  ];
+  const drainGeometry = new THREE.BoxGeometry(0.95, 0.025, 0.48, 5, 1, 3);
+  const drainMesh = new THREE.InstancedMesh(drainGeometry, mats.grate, drains.length);
+  drainMesh.name = "StormDrains";
+  drainMesh.receiveShadow = true;
+  for (let i = 0; i < drains.length; i++) {
+    const [x, z, rotation] = drains[i]!;
+    quaternion.setFromEuler(new THREE.Euler(0, rotation, 0));
+    matrix.compose(position.set(x, 0.024, z), quaternion, scale.set(1, 1, 1));
+    drainMesh.setMatrixAt(i, matrix);
+  }
+  drainMesh.instanceMatrix.needsUpdate = true;
+  group.add(drainMesh);
+
+  const paintMarks: Array<[number, number, number, number]> = [];
+  for (let i = 0; i < 12; i++) {
+    paintMarks.push([-5.2, -48 + i * 3.6, 0.16, 1.3]);
+    paintMarks.push([5.2, -48 + i * 3.6, 0.16, 1.3]);
+  }
+  const paintGeometry = new THREE.PlaneGeometry(1, 1);
+  const paintMesh = new THREE.InstancedMesh(paintGeometry, mats.roadPaintWhite, paintMarks.length);
+  paintMesh.name = "LaneEdgePaint";
+  for (let i = 0; i < paintMarks.length; i++) {
+    const [x, z, sx, sz] = paintMarks[i]!;
+    matrix.compose(position.set(x, 0.027, z), horizontal, scale.set(sx, sz, 1));
+    paintMesh.setMatrixAt(i, matrix);
+  }
+  paintMesh.instanceMatrix.needsUpdate = true;
+  group.add(paintMesh);
+
+  const rubbleCount = 52;
+  const rubbleGeometry = new THREE.IcosahedronGeometry(0.12, 0);
+  const rubbleMesh = new THREE.InstancedMesh(rubbleGeometry, mats.concreteDark, rubbleCount);
+  rubbleMesh.name = "CompoundRubble";
+  rubbleMesh.receiveShadow = true;
+  for (let i = 0; i < rubbleCount; i++) {
+    const angle = hash2ForLayout(i, 41) * Math.PI * 2;
+    const radius = 10 + hash2ForLayout(i, 42) * 39;
+    const size = 0.35 + hash2ForLayout(i, 43) * 1.25;
+    position.set(Math.cos(angle) * radius, 0.035 + size * 0.025, Math.sin(angle) * radius);
+    quaternion.setFromEuler(
+      new THREE.Euler(
+        hash2ForLayout(i, 44) * Math.PI,
+        hash2ForLayout(i, 45) * Math.PI,
+        hash2ForLayout(i, 46) * Math.PI,
+      ),
+    );
+    matrix.compose(position, quaternion, scale.set(size, size * 0.55, size * 0.8));
+    rubbleMesh.setMatrixAt(i, matrix);
+  }
+  rubbleMesh.instanceMatrix.needsUpdate = true;
+  group.add(rubbleMesh);
+
+  return { group, colliders: [] };
+}
+
+function hash2ForLayout(value: number, seed: number): number {
+  let h = Math.imul(value + 1, 374761393) ^ Math.imul(seed, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
 }

@@ -15,8 +15,8 @@ const ADS_ROT = new THREE.Euler(0, 0, 0);
 const RECOIL_KICK_PITCH = 0.042;
 const RECOIL_KICK_YAW = 0.01;
 const RECOIL_WEAPON_KICK = 0.065;
-const RECOIL_SPRING = 22;
-const RECOIL_DAMP = 0.84;
+const RECOIL_SPRING = 30;
+const RECOIL_DAMP = 0.78;
 const ADS_RECOIL_MULT = 0.48;
 const HIP_RECOIL_MULT = 1.0;
 
@@ -36,6 +36,10 @@ export type WeaponController = {
       mouseDx: number;
       mouseDy: number;
       time: number;
+      /** Horizontal speed normalized around walk speed. */
+      moveSpeed?: number;
+      /** Signed local strafe input/velocity, -1..1. */
+      strafe?: number;
     },
   ) => void;
   tryFire: () => boolean;
@@ -49,6 +53,8 @@ export type WeaponController = {
   /** Camera pitch kick remaining this frame (consume via getRecoilPitch). */
   getRecoilPitch: () => number;
   getRecoilYaw: () => number;
+  /** World-space muzzle position for cosmetic effects. */
+  getMuzzleWorldPosition: (out: THREE.Vector3) => THREE.Vector3;
   dispose: () => void;
 };
 
@@ -378,6 +384,9 @@ export function createWeapon(camera: THREE.PerspectiveCamera): WeaponController 
   let swayX = 0;
   let swayY = 0;
   let flashTimer = 0;
+  let sprintBlend = 0;
+  let shotIndex = 0;
+  let timeSinceFire = 1;
 
   const magRestY = 0;
   const magRestRotX = 0;
@@ -426,14 +435,24 @@ export function createWeapon(camera: THREE.PerspectiveCamera): WeaponController 
     if (reloading || fireCooldown > 0 || ammo <= 0) return false;
     ammo -= 1;
     fireCooldown = FIRE_INTERVAL;
+    if (timeSinceFire > FIRE_INTERVAL * 2.15) shotIndex = 0;
+    timeSinceFire = 0;
+    shotIndex += 1;
 
     const rMult = ads ? ADS_RECOIL_MULT : HIP_RECOIL_MULT;
-    const pitchKick = RECOIL_KICK_PITCH * rMult * (0.88 + Math.random() * 0.28);
-    const yawKick = (Math.random() - 0.5) * 2 * RECOIL_KICK_YAW * rMult;
+    const sustained = Math.min(1.24, 1 + shotIndex * 0.018);
+    const pitchKick = RECOIL_KICK_PITCH * rMult * sustained * (0.93 + Math.random() * 0.14);
+    // A soft repeatable S-curve gives learnable recoil, with just enough noise
+    // to keep long bursts from feeling mechanical.
+    const yawPattern = Math.sin(shotIndex * 1.72) * 0.68;
+    const yawKick = (yawPattern + (Math.random() - 0.5) * 0.65) * RECOIL_KICK_YAW * rMult;
 
-    weaponKickVel += RECOIL_WEAPON_KICK * rMult;
-    camPitchVel += pitchKick;
-    camYawVel += yawKick;
+    weaponKick += RECOIL_WEAPON_KICK * rMult * 0.5;
+    weaponKickVel += RECOIL_WEAPON_KICK * rMult * 5.5;
+    camPitchKick += pitchKick * 0.28;
+    camYawKick += yawKick * 0.22;
+    camPitchVel += pitchKick * 4.8;
+    camYawVel += yawKick * 4;
 
     // Sticky climb (partially recovered in update)
     climbPitch += pitchKick * 0.35;
@@ -487,10 +506,13 @@ export function createWeapon(camera: THREE.PerspectiveCamera): WeaponController 
       mouseDx: number;
       mouseDy: number;
       time: number;
+      moveSpeed?: number;
+      strafe?: number;
     },
   ): void {
     ads = opts.ads;
     fireCooldown = Math.max(0, fireCooldown - dt);
+    timeSinceFire += dt;
 
     const targetPos = ads ? ADS_POS : HIP_POS;
     const targetRot = ads ? ADS_ROT : HIP_ROT;
@@ -516,9 +538,16 @@ export function createWeapon(camera: THREE.PerspectiveCamera): WeaponController 
       Math.sin(opts.time * BREATH_FREQ * 1.7 * Math.PI * 2) * BREATH_AMP * 0.4;
     const breathX = Math.cos(opts.time * BREATH_FREQ * 0.9 * Math.PI * 2) * BREATH_AMP * 0.6;
 
-    const sprintDip = opts.sprinting && !ads ? 0.055 : 0;
-    const sprintPull = opts.sprinting && !ads ? 0.06 : 0;
-    const moveDip = opts.moving && !ads ? 0.006 : 0;
+    sprintBlend = THREE.MathUtils.damp(sprintBlend, opts.sprinting && !ads ? 1 : 0, 12, dt);
+    const moveBlend = THREE.MathUtils.clamp(opts.moveSpeed ?? (opts.moving ? 1 : 0), 0, 1.55);
+    const gaitPhase = opts.time * Math.PI * 2 * (1.55 + moveBlend * 0.5);
+    const gait = opts.moving ? Math.sin(gaitPhase) * 0.007 * moveBlend : 0;
+    const gaitLift = opts.moving ? Math.abs(Math.cos(gaitPhase)) * 0.006 * moveBlend : 0;
+    const strafe = THREE.MathUtils.clamp(opts.strafe ?? 0, -1, 1);
+
+    const sprintDip = sprintBlend * 0.072;
+    const sprintPull = sprintBlend * 0.085;
+    const moveDip = opts.moving && !ads ? 0.005 : 0;
 
     // Recoil springs
     weaponKickVel += -weaponKick * RECOIL_SPRING * dt;
@@ -574,14 +603,14 @@ export function createWeapon(camera: THREE.PerspectiveCamera): WeaponController 
     }
 
     group.position.set(
-      basePos.x + swayX + breathX - sprintPull * 0.3,
-      basePos.y - swayY + breath - sprintDip - moveDip + weaponKick * 0.18 - reloadDip,
+      basePos.x + swayX + breathX - sprintPull * 0.3 + gait,
+      basePos.y - swayY + breath - sprintDip - moveDip - gaitLift + weaponKick * 0.18 - reloadDip,
       basePos.z + weaponKick * 0.42 + sprintPull,
     );
     group.rotation.set(
-      baseRot.x + weaponKick * 1.05 + swayY * 0.5,
-      baseRot.y + swayX * 0.8 + reloadYaw,
-      baseRot.z + swayX * 0.4 - weaponKick * 0.2 + reloadRoll,
+      baseRot.x + weaponKick * 1.05 + swayY * 0.5 - sprintBlend * 0.16,
+      baseRot.y + swayX * 0.8 + reloadYaw + sprintBlend * 0.18,
+      baseRot.z + swayX * 0.4 - weaponKick * 0.2 + reloadRoll - sprintBlend * 0.22 - strafe * 0.008,
     );
 
     // Flash decay
@@ -619,7 +648,6 @@ export function createWeapon(camera: THREE.PerspectiveCamera): WeaponController 
     camera.remove(viewRim);
     for (const s of shells) {
       camera.remove(s.mesh);
-      s.mesh.geometry.dispose();
     }
     shellGeo.dispose();
     shellMat.dispose();
@@ -645,6 +673,7 @@ export function createWeapon(camera: THREE.PerspectiveCamera): WeaponController 
     isReloading: () => reloading,
     getRecoilPitch: () => camPitchKick + climbPitch,
     getRecoilYaw: () => camYawKick + climbYaw,
+    getMuzzleWorldPosition: (out: THREE.Vector3) => built.muzzlePoint.getWorldPosition(out),
     dispose,
   };
 }
