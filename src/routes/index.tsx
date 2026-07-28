@@ -154,27 +154,30 @@ function Index() {
           </div>
 
           <div className="max-w-3xl">
-            <div className="mb-4 inline-flex items-center gap-2 border border-primary/40 bg-primary/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.3em] text-primary">
+            <div className="mb-4 inline-flex items-center gap-2 border border-primary/40 bg-primary/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.25em] text-primary sm:text-xs sm:tracking-[0.3em]">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
               Operation Live · Browser Deployable
             </div>
-            <h1 className="font-[Orbitron] text-6xl font-black uppercase leading-[0.9] tracking-tight text-foreground md:text-8xl">
+            <h1 className="font-[Orbitron] text-[clamp(2.75rem,13vw,4.5rem)] font-black uppercase leading-[0.9] tracking-tight text-foreground md:text-8xl">
               Grok Of
               <br />
               <span className="text-primary text-glow">Duty</span>
             </h1>
-            <p className="mt-6 max-w-xl text-lg text-muted-foreground md:text-xl">
+            <p className="mt-5 max-w-xl text-base text-muted-foreground sm:mt-6 sm:text-lg md:text-xl">
               A browser-native 3D tactical shooter. No downloads. No launcher. Just drop in, gear
               up, and dominate the battlefield from any device.
             </p>
 
-            <div className="mt-10 flex flex-wrap items-center gap-4">
-              <button onClick={launch} className="btn-tactical animate-pulse-glow text-base">
+            <div className="mt-8 flex flex-wrap items-center gap-3 sm:mt-10 sm:gap-4">
+              <button
+                onClick={launch}
+                className="btn-tactical animate-pulse-glow w-full text-sm sm:w-auto sm:text-base"
+              >
                 ▶ Play Now
               </button>
               <a
                 href="#roadmap"
-                className="inline-flex items-center gap-3 border border-border px-6 py-4 text-xs font-bold uppercase tracking-widest text-foreground hover:border-primary hover:text-primary transition-colors clip-tactical"
+                className="inline-flex w-full items-center justify-center gap-3 border border-border px-6 py-4 text-xs font-bold uppercase tracking-widest text-foreground hover:border-primary hover:text-primary transition-colors clip-tactical sm:w-auto"
               >
                 View Roadmap
               </a>
