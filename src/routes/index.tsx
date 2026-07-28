@@ -257,6 +257,15 @@ function Index() {
         </div>
       </section>
 
+      {/* AD · 01 — between Arsenal and Roadmap */}
+      {!gameOpen && (
+        <div className="border-t border-border bg-background px-4 py-10 sm:px-6">
+          <AdSlot slot={AD_SLOTS.midPage} label="// SPONSORED · 01" minHeight={280} />
+        </div>
+      )}
+
+
+
       {/* ROADMAP */}
       <section id="roadmap" className="relative border-t border-border bg-card/30 py-16 sm:py-24">
         <div className="absolute inset-0 grid-lines opacity-20 pointer-events-none" />
