@@ -192,12 +192,12 @@ function createMaterials(variant: number): MaterialPack {
     uniformSecondary: material("operator_uniform_secondary", palette.secondary, 0.9, 0.015),
     armor: material("operator_ceramic_armor", palette.armor, 0.73, 0.08),
     webbing: material("operator_webbing", palette.webbing, 0.88, 0.015),
-    rubber: material("operator_boot_rubber", 0x171917, 0.86, 0.03),
+    rubber: material("operator_boot_rubber", 0x292d29, 0.86, 0.03),
     skin: material("operator_skin", skinTones[variant % skinTones.length]!, 0.8, 0),
     balaclava: material("operator_balaclava", 0x202321, 0.96, 0),
     helmet: material("operator_helmet", 0x252a26, 0.68, 0.09),
-    metal: material("operator_weapon_metal", 0x202326, 0.3, 0.76),
-    gunPolymer: material("operator_weapon_polymer", 0x171a1c, 0.58, 0.24),
+    metal: material("operator_weapon_metal", 0x30353a, 0.3, 0.76),
+    gunPolymer: material("operator_weapon_polymer", 0x202427, 0.58, 0.24),
     opticGlass,
     hostilePatch: material("operator_hostile_patch", 0x93281f, 0.64, 0.06),
   };
@@ -283,10 +283,10 @@ function solveArmIK(rig: EnemyModelRig, side: "left" | "right", target: THREE.Ve
 function solveWeaponGrip(rig: EnemyModelRig): void {
   rig.weapon.updateMatrix();
 
-  _armTarget.set(0.02, 0, 0.31).applyMatrix4(rig.weapon.matrix);
+  _armTarget.set(-0.045, 0, 0.31).applyMatrix4(rig.weapon.matrix);
   solveArmIK(rig, "left", _armTarget);
 
-  _armTarget.set(0.04, -0.02, 0.1).applyMatrix4(rig.weapon.matrix);
+  _armTarget.set(0.075, -0.02, 0.1).applyMatrix4(rig.weapon.matrix);
   solveArmIK(rig, "right", _armTarget);
 }
 
@@ -981,7 +981,11 @@ export function poseEnemyDeath(rig: EnemyModelRig, progress: number, fallSide: -
 
   // Both hands retain authored contacts as the muzzle drops. This avoids the
   // floating-rifle and rigid flung-arm artifacts of a purely Euler fall.
-  rig.weapon.rotation.set(THREE.MathUtils.lerp(-0.035, 0.48, t), fallSide * 0.025 * t, 0);
+  rig.weapon.rotation.set(
+    THREE.MathUtils.lerp(-0.035, 0.4, t),
+    fallSide * 0.14 * t,
+    fallSide * 0.12 * t,
+  );
   solveWeaponGrip(rig);
 
   rig.root.updateMatrixWorld(true);
