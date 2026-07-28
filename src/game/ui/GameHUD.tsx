@@ -5,7 +5,10 @@ interface GameHUDProps {
   state: GameHudState;
   onExit: () => void;
   onEngage: () => void;
+  /** Touch device: swap pointer-lock copy for on-screen control copy. */
+  touch?: boolean;
 }
+
 
 function clamp01(n: number): number {
   return Math.max(0, Math.min(1, n));
@@ -202,7 +205,7 @@ function Key({ children }: { children: string }) {
   );
 }
 
-export function GameHUD({ state, onExit, onEngage }: GameHUDProps) {
+export function GameHUD({ state, onExit, onEngage, touch = false }: GameHUDProps) {
   const {
     health,
     maxHealth,
@@ -416,19 +419,25 @@ export function GameHUD({ state, onExit, onEngage }: GameHUDProps) {
         </div>
       </aside>
 
-      <button
-        type="button"
-        onClick={onExit}
-        className="pointer-events-auto absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 z-10 hidden -translate-x-1/2 border border-white/15 bg-black/45 px-3 py-1 font-mono text-[8px] uppercase tracking-[.2em] text-white/45 backdrop-blur transition hover:border-primary/70 hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary sm:block"
-        aria-label="Exit combat"
-      >
-        ESC · RELEASE CURSOR
-      </button>
+      {!touch && (
+        <button
+          type="button"
+          onClick={onExit}
+          className="pointer-events-auto absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 z-10 hidden -translate-x-1/2 border border-white/15 bg-black/45 px-3 py-1 font-mono text-[8px] uppercase tracking-[.2em] text-white/45 backdrop-blur transition hover:border-primary/70 hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary sm:block"
+          aria-label="Exit combat"
+        >
+          ESC · RELEASE CURSOR
+        </button>
+      )}
+
 
       {/* Player vitals */}
       <section
-        className="hud-motion absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] font-mono uppercase max-[430px]:bottom-[5.6rem]"
-        style={{ animation: "hud-enter .5s .12s ease-out both" }}
+        className={`hud-motion absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] font-mono uppercase ${touch ? "scale-[.8] origin-top-left opacity-90" : ""}`}
+        style={{
+          animation: "hud-enter .5s .12s ease-out both",
+          ...(touch ? { top: "5rem", bottom: "auto" } : null),
+        }}
         aria-label="Player status"
       >
         <div className="relative min-w-[clamp(12rem,23vw,18rem)] overflow-hidden border-l-2 border-white/70 bg-gradient-to-r from-black/78 via-black/52 to-transparent py-2 pl-3 pr-9 backdrop-blur-[2px] max-[430px]:min-w-44 max-[430px]:pr-4">
@@ -467,8 +476,11 @@ export function GameHUD({ state, onExit, onEngage }: GameHUDProps) {
 
       {/* Weapon telemetry */}
       <section
-        className="hud-motion absolute bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] text-right font-mono uppercase"
-        style={{ animation: "hud-enter .5s .18s ease-out both" }}
+        className={`hud-motion absolute bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] text-right font-mono uppercase ${touch ? "scale-[.8] origin-top-right opacity-90" : ""}`}
+        style={{
+          animation: "hud-enter .5s .18s ease-out both",
+          ...(touch ? { top: "9rem", bottom: "auto" } : null),
+        }}
         aria-label="Weapon status"
       >
         <div className="relative min-w-[clamp(11.5rem,22vw,17rem)] overflow-hidden border-r-2 border-white/70 bg-gradient-to-l from-black/78 via-black/52 to-transparent py-2 pl-9 pr-3 backdrop-blur-[2px]">
@@ -567,7 +579,9 @@ export function GameHUD({ state, onExit, onEngage }: GameHUDProps) {
                   <span aria-hidden="true">▶</span>
                 </button>
                 <p className="mt-2 text-center font-mono text-[9px] uppercase tracking-[.12em] text-white/50">
-                  Click to capture cursor · Headphones recommended
+                  {touch
+                    ? "Tap to deploy · On-screen controls · Headphones recommended"
+                    : "Click to capture cursor · Headphones recommended"}
                 </p>
               </div>
 
@@ -581,16 +595,28 @@ export function GameHUD({ state, onExit, onEngage }: GameHUDProps) {
                   </span>
                 </div>
                 <div className="mt-5 grid grid-cols-2 gap-x-5 gap-y-3">
-                  {[
-                    ["WASD", "Move"],
-                    ["MOUSE", "Aim"],
-                    ["LMB", "Fire"],
-                    ["RMB", "Aim down sight"],
-                    ["SHIFT", "Sprint"],
-                    ["CTRL", "Crouch"],
-                    ["SPACE", "Jump"],
-                    ["R", "Reload"],
-                  ].map(([key, action]) => (
+                  {(touch
+                    ? [
+                        ["STICK", "Move"],
+                        ["DRAG", "Aim"],
+                        ["FIRE", "Fire"],
+                        ["ADS", "Aim down sight"],
+                        ["RUN", "Sprint"],
+                        ["CRCH", "Crouch"],
+                        ["JUMP", "Jump"],
+                        ["R", "Reload"],
+                      ]
+                    : [
+                        ["WASD", "Move"],
+                        ["MOUSE", "Aim"],
+                        ["LMB", "Fire"],
+                        ["RMB", "Aim down sight"],
+                        ["SHIFT", "Sprint"],
+                        ["CTRL", "Crouch"],
+                        ["SPACE", "Jump"],
+                        ["R", "Reload"],
+                      ]
+                  ).map(([key, action]) => (
                     <div key={key} className="flex items-center gap-2.5">
                       <Key>{key}</Key>
                       <span className="font-mono text-[10px] uppercase tracking-[.08em] text-white/65">

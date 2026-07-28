@@ -4,6 +4,7 @@ import { createWeapon, type WeaponController } from "./weapon";
 import { canOccupyHeight, PHYSICS, resolveBody, type PhysicsBody } from "./physics";
 
 const LOOK_SENS = 0.002;
+const TOUCH_LOOK_SENS = 0.0038;
 const PI_2 = Math.PI / 2;
 
 const FOV_HIP = 75;
@@ -40,6 +41,20 @@ export function createPlayer(opts: {
   update: (dt: number) => void;
   isLocked: () => boolean;
   requestLock: () => void;
+  /** Switches the controller to on-screen touch input (no pointer lock). */
+  setTouchMode: (enabled: boolean) => void;
+  /** Releases touch play session (returns to briefing). */
+  releaseTouch: () => void;
+  touch: {
+    move: (x: number, y: number) => void;
+    look: (dx: number, dy: number) => void;
+    setFire: (down: boolean) => void;
+    setAds: (down: boolean) => void;
+    setSprint: (down: boolean) => void;
+    toggleCrouch: () => void;
+    jump: () => void;
+    reload: () => void;
+  };
   getPosition: () => THREE.Vector3;
   takeDamage: (amount: number, fromWorld?: THREE.Vector3) => void;
   heal: (amount: number) => void;
@@ -100,6 +115,16 @@ export function createPlayer(opts: {
   const keys: Record<string, boolean> = {};
   let fireHeld = false;
   let adsHeld = false;
+
+  // --- Touch (phone/tablet) input state ---
+  let touchMode = false;
+  let touchActive = false;
+  let touchMoveX = 0;
+  let touchMoveY = 0;
+  let touchLookDx = 0;
+  let touchLookDy = 0;
+  let touchSprint = false;
+  let touchCrouch = false;
 
   // Previous HUD snapshot to avoid spam
   let lastHud: Partial<GameHudState> = {};
@@ -177,12 +202,77 @@ export function createPlayer(opts: {
   };
 
   const tryRequestLock = (): void => {
+    if (touchMode) {
+      touchActive = true;
+      locked = true;
+      pushHud({ locked: true });
+      return;
+    }
     try {
       void canvas.requestPointerLock().catch(onPointerLockError);
     } catch {
       onPointerLockError();
     }
   };
+
+  const resetInput = (): void => {
+    fireHeld = false;
+    adsHeld = false;
+    mouseDx = 0;
+    mouseDy = 0;
+    touchMoveX = 0;
+    touchMoveY = 0;
+    touchLookDx = 0;
+    touchLookDy = 0;
+    touchSprint = false;
+    touchCrouch = false;
+    for (const code of Object.keys(keys)) keys[code] = false;
+  };
+
+  const releaseTouch = (): void => {
+    touchActive = false;
+    locked = false;
+    resetInput();
+    pushHud({ locked: false, ads: false, sprinting: false });
+  };
+
+  const setTouchMode = (enabled: boolean): void => {
+    touchMode = enabled;
+    if (!enabled) touchActive = false;
+  };
+
+  const touchApi = {
+    move: (x: number, y: number): void => {
+      touchMoveX = x;
+      touchMoveY = y;
+    },
+    look: (dx: number, dy: number): void => {
+      touchLookDx += dx;
+      touchLookDy += dy;
+    },
+    setFire: (down: boolean): void => {
+      fireHeld = down;
+    },
+    setAds: (down: boolean): void => {
+      adsHeld = down;
+    },
+    setSprint: (down: boolean): void => {
+      touchSprint = down;
+    },
+    toggleCrouch: (): void => {
+      touchCrouch = !touchCrouch;
+    },
+    jump: (): void => {
+      if (locked) jumpBufferT = JUMP_BUFFER;
+    },
+    reload: (): void => {
+      if (locked && weapon.reload()) {
+        onReloadStart?.();
+        syncWeaponHud();
+      }
+    },
+  };
+
 
   const onMouseDown = (e: MouseEvent): void => {
     if (document.pointerLockElement !== canvas) {
@@ -266,7 +356,18 @@ export function createPlayer(opts: {
     time += t;
     emptyClickCd = Math.max(0, emptyClickCd - t);
 
-    locked = document.pointerLockElement === canvas;
+    locked = touchMode ? touchActive : document.pointerLockElement === canvas;
+
+    // Touch look deltas behave like accumulated mouse movement.
+    if (touchMode && locked && (touchLookDx !== 0 || touchLookDy !== 0)) {
+      mouseDx += touchLookDx;
+      mouseDy += touchLookDy;
+      euler.y -= touchLookDx * TOUCH_LOOK_SENS;
+      euler.x -= touchLookDy * TOUCH_LOOK_SENS;
+      euler.x = Math.max(-PI_2 + 0.01, Math.min(PI_2 - 0.01, euler.x));
+    }
+    touchLookDx = 0;
+    touchLookDy = 0;
 
     const localStrafeSpeed = velocity.x * Math.cos(euler.y) + velocity.z * -Math.sin(euler.y);
     const targetRoll = grounded
@@ -285,7 +386,7 @@ export function createPlayer(opts: {
     camera.quaternion.setFromEuler(lookEuler);
 
     // --- Stance ---
-    const wantsCrouch = !!(keys["ControlLeft"] || keys["ControlRight"]);
+    const wantsCrouch = !!(keys["ControlLeft"] || keys["ControlRight"]) || touchCrouch;
     if (wantsCrouch) {
       crouching = true;
     } else if (crouching && canOccupyHeight(position, colliders, PHYSICS.standHeight)) {
@@ -296,10 +397,10 @@ export function createPlayer(opts: {
     cameraHeight = THREE.MathUtils.damp(cameraHeight, targetCamHeight, 12, t);
 
     // --- Movement wish ---
+    const touchForward = touchMode ? -touchMoveY : 0;
     const sprinting =
       locked &&
-      !!keys["KeyW"] &&
-      (keys["ShiftLeft"] || keys["ShiftRight"]) &&
+      (touchMode ? touchSprint && touchForward > 0.55 : !!keys["KeyW"] && (keys["ShiftLeft"] || keys["ShiftRight"])) &&
       !crouching &&
       !adsHeld;
     const ads = locked && adsHeld && !sprinting;
@@ -308,10 +409,17 @@ export function createPlayer(opts: {
     if (locked) {
       forward.set(-Math.sin(euler.y), 0, -Math.cos(euler.y));
       right.set(Math.cos(euler.y), 0, -Math.sin(euler.y));
-      if (keys["KeyW"]) wishDir.add(forward);
-      if (keys["KeyS"]) wishDir.sub(forward);
-      if (keys["KeyD"]) wishDir.add(right);
-      if (keys["KeyA"]) wishDir.sub(right);
+      if (touchMode) {
+        if (Math.abs(touchMoveX) > 0.06 || Math.abs(touchMoveY) > 0.06) {
+          wishDir.addScaledVector(forward, touchForward);
+          wishDir.addScaledVector(right, touchMoveX);
+        }
+      } else {
+        if (keys["KeyW"]) wishDir.add(forward);
+        if (keys["KeyS"]) wishDir.sub(forward);
+        if (keys["KeyD"]) wishDir.add(right);
+        if (keys["KeyA"]) wishDir.sub(right);
+      }
     }
     const hasMoveInput = wishDir.lengthSq() > 0.0001;
     if (hasMoveInput) wishDir.normalize();
@@ -527,6 +635,9 @@ export function createPlayer(opts: {
     update,
     isLocked: () => locked,
     requestLock: tryRequestLock,
+    setTouchMode,
+    releaseTouch,
+    touch: touchApi,
     getPosition: () => position.clone(),
     takeDamage,
     heal,

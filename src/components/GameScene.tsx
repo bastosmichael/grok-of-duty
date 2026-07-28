@@ -5,7 +5,7 @@ import { createWorld } from "@/game/world";
 import { createPlayer } from "@/game/player";
 import { createCombat } from "@/game/combat";
 import { createAudio } from "@/game/audio";
-import { GameHUD, LoadingScreen } from "@/game/ui";
+import { GameHUD, LoadingScreen, TouchControls } from "@/game/ui";
 import { DEFAULT_HUD, type GameHudState, type KillFeedEntry } from "@/game/types";
 
 interface Props {
@@ -18,6 +18,18 @@ export default function GameScene({ onExit }: Props) {
   const playerRef = useRef<ReturnType<typeof createPlayer> | null>(null);
   const audioRef = useRef<ReturnType<typeof createAudio> | null>(null);
   const gfxRef = useRef<ReturnType<typeof createRenderer> | null>(null);
+
+  // Touch devices can't use pointer lock, so the player controller switches to
+  // on-screen stick + buttons instead.
+  const [touchMode] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return (
+      window.matchMedia?.("(pointer: coarse)").matches === true ||
+      (navigator.maxTouchPoints ?? 0) > 0
+    );
+  });
+  const touchModeRef = useRef(touchMode);
+  touchModeRef.current = touchMode;
 
   const mergeHud = useCallback((partial: Partial<GameHudState>) => {
     setHud((prev) => {
@@ -131,6 +143,7 @@ export default function GameScene({ onExit }: Props) {
         onEmpty: () => audio.playEmpty(),
       });
       playerRef.current = player;
+      player.setTouchMode(touchModeRef.current);
       disposers.push(() => player.dispose());
 
       // Spawn player slightly inside the compound
@@ -315,18 +328,68 @@ export default function GameScene({ onExit }: Props) {
 
   const handleExit = useCallback(() => {
     document.exitPointerLock?.();
+    playerRef.current?.releaseTouch();
     audioRef.current?.setAmbient(false);
     onExit();
   }, [onExit]);
 
+  const handlePause = useCallback(() => {
+    playerRef.current?.releaseTouch();
+  }, []);
+
+  const touchMove = useCallback((x: number, y: number) => {
+    playerRef.current?.touch.move(x, y);
+  }, []);
+  const touchLook = useCallback((dx: number, dy: number) => {
+    playerRef.current?.touch.look(dx, dy);
+  }, []);
+  const touchFire = useCallback((down: boolean) => {
+    playerRef.current?.touch.setFire(down);
+  }, []);
+  const touchAds = useCallback((down: boolean) => {
+    playerRef.current?.touch.setAds(down);
+  }, []);
+  const touchSprint = useCallback((down: boolean) => {
+    playerRef.current?.touch.setSprint(down);
+  }, []);
+  const touchJump = useCallback(() => {
+    playerRef.current?.touch.jump();
+  }, []);
+  const touchReload = useCallback(() => {
+    playerRef.current?.touch.reload();
+  }, []);
+  const touchCrouch = useCallback(() => {
+    playerRef.current?.touch.toggleCrouch();
+  }, []);
+
   return (
-    <div className="fixed inset-0 z-[200] bg-black">
+    <div className="fixed inset-0 z-[200] bg-black" style={{ touchAction: "none" }}>
       <div ref={mountRef} className="absolute inset-0" />
 
       {hud.loading ? (
         <LoadingScreen progress={hud.loadProgress} label={hud.loadLabel} />
       ) : (
-        <GameHUD state={hud} onExit={handleExit} onEngage={handleEngage} />
+        <>
+          <GameHUD
+            state={hud}
+            onExit={handleExit}
+            onEngage={handleEngage}
+            touch={touchMode}
+          />
+          {touchMode && hud.ready && hud.locked && (
+            <TouchControls
+              onMove={touchMove}
+              onLook={touchLook}
+              onFire={touchFire}
+              onAds={touchAds}
+              onSprint={touchSprint}
+              onJump={touchJump}
+              onReload={touchReload}
+              onCrouch={touchCrouch}
+              onPause={handlePause}
+            />
+          )}
+        </>
       )}
     </div>
   );
