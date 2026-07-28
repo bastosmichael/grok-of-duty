@@ -435,7 +435,7 @@ export function GameHUD({ state, onExit, onEngage, touch = false }: GameHUDProps
         className={`hud-motion absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] font-mono uppercase ${touch ? "scale-[.8] origin-top-left opacity-90" : ""}`}
         style={{
           animation: "hud-enter .5s .12s ease-out both",
-          ...(touch ? { top: "5rem", bottom: "auto" } : null),
+          ...(touch ? { top: "calc(env(safe-area-inset-top) + 5rem)", bottom: "auto" } : null),
         }}
         aria-label="Player status"
       >
