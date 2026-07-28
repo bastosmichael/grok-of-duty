@@ -386,7 +386,7 @@ export function createPlayer(opts: {
     camera.quaternion.setFromEuler(lookEuler);
 
     // --- Stance ---
-    const wantsCrouch = !!(keys["ControlLeft"] || keys["ControlRight"]);
+    const wantsCrouch = !!(keys["ControlLeft"] || keys["ControlRight"]) || touchCrouch;
     if (wantsCrouch) {
       crouching = true;
     } else if (crouching && canOccupyHeight(position, colliders, PHYSICS.standHeight)) {
@@ -397,10 +397,10 @@ export function createPlayer(opts: {
     cameraHeight = THREE.MathUtils.damp(cameraHeight, targetCamHeight, 12, t);
 
     // --- Movement wish ---
+    const touchForward = touchMode ? -touchMoveY : 0;
     const sprinting =
       locked &&
-      !!keys["KeyW"] &&
-      (keys["ShiftLeft"] || keys["ShiftRight"]) &&
+      (touchMode ? touchSprint && touchForward > 0.55 : !!keys["KeyW"] && (keys["ShiftLeft"] || keys["ShiftRight"])) &&
       !crouching &&
       !adsHeld;
     const ads = locked && adsHeld && !sprinting;
@@ -409,10 +409,17 @@ export function createPlayer(opts: {
     if (locked) {
       forward.set(-Math.sin(euler.y), 0, -Math.cos(euler.y));
       right.set(Math.cos(euler.y), 0, -Math.sin(euler.y));
-      if (keys["KeyW"]) wishDir.add(forward);
-      if (keys["KeyS"]) wishDir.sub(forward);
-      if (keys["KeyD"]) wishDir.add(right);
-      if (keys["KeyA"]) wishDir.sub(right);
+      if (touchMode) {
+        if (Math.abs(touchMoveX) > 0.06 || Math.abs(touchMoveY) > 0.06) {
+          wishDir.addScaledVector(forward, touchForward);
+          wishDir.addScaledVector(right, touchMoveX);
+        }
+      } else {
+        if (keys["KeyW"]) wishDir.add(forward);
+        if (keys["KeyS"]) wishDir.sub(forward);
+        if (keys["KeyD"]) wishDir.add(right);
+        if (keys["KeyA"]) wishDir.sub(right);
+      }
     }
     const hasMoveInput = wishDir.lengthSq() > 0.0001;
     if (hasMoveInput) wishDir.normalize();
