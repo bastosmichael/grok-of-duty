@@ -213,6 +213,11 @@ export function GameHUD({ state, onExit, onEngage }: GameHUDProps) {
     score,
     kills,
     streak,
+    level,
+    levelName,
+    hostilesRemaining,
+    hostilesTotal,
+    levelState,
     weaponName,
     reloading,
     ads,
@@ -233,7 +238,7 @@ export function GameHUD({ state, onExit, onEngage }: GameHUDProps) {
   const lowAmmo = ammo <= 5;
   const dmgAlpha = clamp01(damageFlash);
   const armorMax = maxArmor > 0 ? maxArmor : 50;
-  const isResume = score > 0 || kills > 0 || health < maxHealth || ammo < 30;
+  const isResume = level > 1 || score > 0 || kills > 0 || health < maxHealth || ammo < 30;
   const centerMessage = hitMarkerKill ? "TARGET ELIMINATED" : hitMarkerHeadshot ? "HEADSHOT" : null;
   const handleBriefingKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key === "Escape") {
@@ -323,6 +328,22 @@ export function GameHUD({ state, onExit, onEngage }: GameHUDProps) {
         </div>
       )}
 
+      {levelState !== "active" && (
+        <div
+          className="hud-motion absolute left-1/2 top-[28%] -translate-x-1/2 border-y border-primary/45 bg-black/75 px-8 py-3 text-center font-mono uppercase shadow-[0_0_32px_rgba(0,0,0,.75)]"
+          style={{ animation: "hud-enter .35s ease-out both" }}
+          role="status"
+          aria-live="polite"
+        >
+          <div className="text-[8px] tracking-[.34em] text-white/55">
+            Level {level.toString().padStart(2, "0")} · {levelName}
+          </div>
+          <div className="mt-1 font-[Orbitron] text-sm font-black tracking-[.24em] text-primary text-glow">
+            {levelState === "cleared" ? "Area secured" : "New hostiles incoming"}
+          </div>
+        </div>
+      )}
+
       {/* Mission header */}
       <header
         className="hud-motion absolute left-[max(1rem,env(safe-area-inset-left))] top-[max(.75rem,env(safe-area-inset-top))] max-w-[46vw] font-mono uppercase"
@@ -334,11 +355,13 @@ export function GameHUD({ state, onExit, onEngage }: GameHUDProps) {
             <div className="flex items-center gap-2 text-[9px] font-semibold tracking-[.22em] text-white">
               <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_7px_var(--primary)]" />
               <span>
-                <span className="max-[359px]:hidden">OPERATION </span>NIGHTFALL
+                LEVEL {level.toString().padStart(2, "0")}
+                <span className="max-[430px]:hidden"> · {levelName}</span>
               </span>
             </div>
             <div className="mt-0.5 text-[8px] tracking-[.2em] text-white/65 max-[430px]:hidden">
-              KILLHOUSE 07 <span className="text-white/20">//</span> LIVE FIRE
+              PROCEDURAL AO <span className="text-white/20">//</span>{" "}
+              {hostilesTotal === 1 ? "SOLO CONTACT" : `${hostilesTotal} CONTACTS`}
             </div>
           </div>
         </div>
@@ -364,10 +387,11 @@ export function GameHUD({ state, onExit, onEngage }: GameHUDProps) {
             </span>
           </div>
           <div className="mt-1 flex justify-end gap-3 border-t border-white/8 pt-1 text-[8px] tracking-[.18em] text-white/60">
-            <span className="max-[359px]:hidden">HOSTILES DOWN</span>
-            <span className="hidden max-[359px]:inline">KIA</span>
+            <span className="max-[359px]:hidden">HOSTILES REMAINING</span>
+            <span className="hidden max-[359px]:inline">LEFT</span>
             <span className="font-bold tabular-nums text-white">
-              {kills.toString().padStart(2, "0")}
+              {hostilesRemaining.toString().padStart(2, "0")}
+              <span className="text-white/30">/{hostilesTotal.toString().padStart(2, "0")}</span>
             </span>
           </div>
         </div>
@@ -511,14 +535,15 @@ export function GameHUD({ state, onExit, onEngage }: GameHUDProps) {
                   {isResume ? "Return to fight" : "Weapons free"}
                 </h2>
                 <p className="mt-4 max-w-sm font-mono text-[11px] uppercase leading-relaxed tracking-[.11em] text-white/65">
-                  Clear the killhouse. Maintain momentum. Armor absorbs initial damage; use cover
-                  while recovering.
+                  Level one begins in a compact arena against one fighter. Every secured level
+                  expands the AO, generates new cover, and adds another faster, more dangerous
+                  operator.
                 </p>
 
                 <dl className="mt-7 grid grid-cols-3 gap-px bg-white/10">
                   {[
-                    ["AO", "SECTOR 07"],
-                    ["ROE", "HOSTILE"],
+                    ["LEVEL", level.toString().padStart(2, "0")],
+                    ["CONTACTS", hostilesTotal.toString().padStart(2, "0")],
                     ["STATUS", isResume ? "PAUSED" : "READY"],
                   ].map(([term, detail]) => (
                     <div key={term} className="bg-[#0a0c0d] px-2 py-3">
@@ -578,8 +603,8 @@ export function GameHUD({ state, onExit, onEngage }: GameHUDProps) {
                   <div className="flex items-start gap-3">
                     <span className="mt-0.5 text-primary">◆</span>
                     <p className="font-mono text-[10px] uppercase leading-relaxed tracking-[.09em] text-white/55">
-                      Eliminate targets to build score multipliers. Headshots confirm in amber;
-                      eliminations confirm in red.
+                      Each procedural level rolls a new codename, perimeter, cover plan, and enemy
+                      callsigns. Difficulty rises through speed, accuracy, health, and squad size.
                     </p>
                   </div>
                 </div>

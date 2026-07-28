@@ -1,5 +1,7 @@
 import type * as THREE from "three";
 
+export type LevelState = "incoming" | "active" | "cleared";
+
 export type DamageIndicator = {
   id: number;
   /** World yaw of attacker relative to player forward, radians (-PI..PI). */
@@ -18,6 +20,11 @@ export type GameHudState = {
   score: number;
   kills: number;
   streak: number;
+  level: number;
+  levelName: string;
+  hostilesRemaining: number;
+  hostilesTotal: number;
+  levelState: LevelState;
   weaponName: string;
   reloading: boolean;
   ads: boolean;
@@ -82,6 +89,11 @@ export const DEFAULT_HUD: GameHudState = {
   score: 0,
   kills: 0,
   streak: 0,
+  level: 1,
+  levelName: "INITIALIZING",
+  hostilesRemaining: 1,
+  hostilesTotal: 1,
+  levelState: "incoming",
   weaponName: "M4A1 · TACTICAL",
   reloading: false,
   ads: false,

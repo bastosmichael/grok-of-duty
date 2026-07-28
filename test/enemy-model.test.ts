@@ -20,17 +20,17 @@ function expectGroundSafe(root: THREE.Object3D): void {
   expect(bounds.min.y).toBeGreaterThanOrEqual(-FLOOR_TOLERANCE);
 }
 
-function expectWeaponContact(model: ReturnType<typeof createEnemyModel>): void {
+function expectWeaponContact(model: ReturnType<typeof createEnemyModel>, tolerance = 1e-5): void {
   model.root.updateMatrixWorld(true);
   const leftHand = new THREE.Vector3();
   const rightHand = new THREE.Vector3();
   model.rig.leftHand.getWorldPosition(leftHand);
   model.rig.rightHand.getWorldPosition(rightHand);
-  const handguard = model.rig.weapon.localToWorld(new THREE.Vector3(0.02, 0, 0.31));
-  const pistolGrip = model.rig.weapon.localToWorld(new THREE.Vector3(0.04, -0.02, 0.1));
+  const handguard = model.rig.weapon.localToWorld(new THREE.Vector3(-0.045, 0, 0.31));
+  const pistolGrip = model.rig.weapon.localToWorld(new THREE.Vector3(0.075, -0.02, 0.1));
 
-  expect(leftHand.distanceTo(handguard)).toBeLessThan(1e-5);
-  expect(rightHand.distanceTo(pistolGrip)).toBeLessThan(1e-5);
+  expect(leftHand.distanceTo(handguard)).toBeLessThan(tolerance);
+  expect(rightHand.distanceTo(pistolGrip)).toBeLessThan(tolerance);
 }
 
 describe("enemy articulated model contact", () => {
@@ -74,6 +74,7 @@ describe("enemy articulated model contact", () => {
           expect(model.root.rotation.x).toBe(0);
           expect(model.root.rotation.y).toBe(expectedYaw);
           expect(model.root.rotation.z).toBe(0);
+          expectWeaponContact(model, 0.005);
         }
       }
     } finally {

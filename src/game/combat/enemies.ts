@@ -50,6 +50,15 @@ export type EnemySystemOpts = {
   /** amount, attacker world position for damage direction */
   onPlayerDamage: (amount: number, fromWorld: THREE.Vector3) => void;
   count?: number;
+  baseHp?: number;
+  baseSpeed?: number;
+  damageScale?: number;
+  fireCooldownScale?: number;
+  accuracy?: number;
+  arenaHalfSize?: number;
+  playerClearRadius?: number;
+  /** Endless sandbox behavior defaults to true; level waves disable it. */
+  respawn?: boolean;
   /** Avoid spawning near this point (player spawn). Defaults to origin. */
   playerSpawn?: THREE.Vector3;
   /** World solids used for spawn safety, movement, and line-of-sight. */
@@ -111,8 +120,18 @@ function randomSpawnPosition(
   out: THREE.Vector3,
   colliders: readonly Collider[],
   occupied: readonly THREE.Vector3[],
+  playerClearRadius: number,
+  arenaHalfSize: number,
 ): THREE.Vector3 {
-  return findEnemySpawn(playerSpawn, out, colliders, occupied, PLAYER_SPAWN_CLEAR);
+  return findEnemySpawn(
+    playerSpawn,
+    out,
+    colliders,
+    occupied,
+    playerClearRadius,
+    Math.random,
+    arenaHalfSize,
+  );
 }
 
 function createEnemyRuntime(
@@ -120,11 +139,22 @@ function createEnemyRuntime(
   playerSpawn: THREE.Vector3,
   colliders: Collider[],
   occupied: readonly THREE.Vector3[],
+  baseHp: number,
+  baseSpeed: number,
+  playerClearRadius: number,
+  arenaHalfSize: number,
 ): EnemyRuntime {
   const variant = nextEnemyId;
   const model = createEnemyModel(variant);
   const { root: group, bodyParts, headMesh, materials, teamHue } = model;
-  const pos = randomSpawnPosition(playerSpawn, new THREE.Vector3(), colliders, occupied);
+  const pos = randomSpawnPosition(
+    playerSpawn,
+    new THREE.Vector3(),
+    colliders,
+    occupied,
+    playerClearRadius,
+    arenaHalfSize,
+  );
   group.position.copy(pos);
   group.rotation.set(0, Math.random() * Math.PI * 2, 0);
 
@@ -135,9 +165,9 @@ function createEnemyRuntime(
 
   const enemy: EnemyRuntime = {
     mesh: group,
-    hp: DEFAULT_HP,
-    maxHp: DEFAULT_HP,
-    speed: DEFAULT_SPEED * (0.88 + Math.random() * 0.3),
+    hp: baseHp,
+    maxHp: baseHp,
+    speed: baseSpeed * (0.92 + Math.random() * 0.16),
     alive: true,
     hitFlash: 0,
     attackCooldown: Math.random() * 0.5,
@@ -194,6 +224,8 @@ function respawnEnemy(
   playerPosition: THREE.Vector3,
   colliders: Collider[],
   occupied: readonly THREE.Vector3[],
+  playerClearRadius: number,
+  arenaHalfSize: number,
 ): void {
   e.alive = true;
   e.collapsing = false;
@@ -214,7 +246,14 @@ function respawnEnemy(
   e.mesh.rotation.set(0, Math.random() * Math.PI * 2, 0);
   e.mesh.scale.set(1, 1, 1);
   e.mesh.visible = true;
-  randomSpawnPosition(playerPosition, e.mesh.position, colliders, occupied);
+  randomSpawnPosition(
+    playerPosition,
+    e.mesh.position,
+    colliders,
+    occupied,
+    playerClearRadius,
+    arenaHalfSize,
+  );
   e.mesh.position.y = ENEMY_BODY.groundY;
   resetEnemyModelPose(e.model.rig);
   restoreMaterials(e);
@@ -226,6 +265,14 @@ function respawnEnemy(
  */
 export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): EnemySystem {
   const count = opts.count ?? SPAWN_COUNT;
+  const baseHp = opts.baseHp ?? DEFAULT_HP;
+  const baseSpeed = opts.baseSpeed ?? DEFAULT_SPEED;
+  const damageScale = opts.damageScale ?? 1;
+  const fireCooldownScale = opts.fireCooldownScale ?? 1;
+  const accuracyBase = opts.accuracy ?? 0.7;
+  const arenaHalfSize = opts.arenaHalfSize ?? ENEMY_BODY.mapHalf;
+  const playerClearRadius = opts.playerClearRadius ?? PLAYER_SPAWN_CLEAR;
+  const allowRespawn = opts.respawn ?? true;
   const playerSpawn = (opts.playerSpawn ?? new THREE.Vector3(0, 0, 0)).clone();
   const colliders = opts.colliders ?? [];
   const enemies: EnemyRuntime[] = [];
@@ -233,7 +280,16 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
 
   for (let i = 0; i < count; i++) {
     const occupied = enemies.map((enemy) => enemy.mesh.position);
-    const e = createEnemyRuntime(scene, playerSpawn, colliders, occupied);
+    const e = createEnemyRuntime(
+      scene,
+      playerSpawn,
+      colliders,
+      occupied,
+      baseHp,
+      baseSpeed,
+      playerClearRadius,
+      arenaHalfSize,
+    );
     enemies.push(e);
     byId.set(e.id, e);
   }
@@ -264,7 +320,7 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
           if (e.deathTimer >= DEATH_SETTLE_DURATION + DEATH_HOLD_DURATION) {
             e.collapsing = false;
             e.mesh.visible = false;
-            e.respawnTimer = RESPAWN_DELAY;
+            e.respawnTimer = allowRespawn ? RESPAWN_DELAY : 0;
           }
         } else if (e.respawnTimer > 0) {
           e.respawnTimer -= safeDt;
@@ -275,7 +331,14 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
             }
             // Respawns clear the player's current location, not merely the
             // original insertion point.
-            respawnEnemy(e, playerPos, colliders, occupiedPositions);
+            respawnEnemy(
+              e,
+              playerPos,
+              colliders,
+              occupiedPositions,
+              playerClearRadius,
+              arenaHalfSize,
+            );
           }
         }
         continue;
@@ -294,7 +357,7 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
 
       if (e.knockVelocity.lengthSq() > 0.0004) {
         _motion.copy(e.knockVelocity).multiplyScalar(safeDt);
-        moveEnemyGrounded(e.mesh.position, _motion, colliders);
+        moveEnemyGrounded(e.mesh.position, _motion, colliders, arenaHalfSize);
         e.knockVelocity.multiplyScalar(Math.exp(-9 * safeDt));
       } else {
         e.knockVelocity.set(0, 0, 0);
@@ -348,7 +411,7 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
         const moveZ =
           (_toPlayer.z * approach + _strafe.z * strafeAmt + _separation.z * 0.8) * moveSpeed;
         _motion.set(moveX, 0, moveZ);
-        moveEnemyGrounded(e.mesh.position, _motion, colliders);
+        moveEnemyGrounded(e.mesh.position, _motion, colliders, arenaHalfSize);
 
         const targetYaw = Math.atan2(_toPlayer.x, _toPlayer.z);
         const yaw = dampEnemyYaw(e.mesh.rotation.y, targetYaw, 11, safeDt);
@@ -387,7 +450,7 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
       // may fire at once so pressure stays intense without becoming unfair.
       e.attackCooldown = Math.max(0, e.attackCooldown - safeDt);
       if (dist <= MELEE_RANGE && e.attackCooldown <= 0) {
-        e.attackCooldown = MELEE_COOLDOWN + Math.random() * 0.22;
+        e.attackCooldown = (MELEE_COOLDOWN + Math.random() * 0.22) * fireCooldownScale;
         _fromPos.copy(e.mesh.position);
         _fromPos.y += 1.2;
         _shotDir.set(playerPos.x, playerPos.y + 1.05, playerPos.z).sub(_fromPos);
@@ -399,7 +462,7 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
         // A wall blocks close strikes just as decisively as it blocks rifle
         // fire; proximity alone is never sufficient line of sight.
         if (!strikeCover || strikeCover.t >= strikeDistance - 0.12) {
-          opts.onPlayerDamage(MELEE_DAMAGE, _fromPos);
+          opts.onPlayerDamage(MELEE_DAMAGE * damageScale, _fromPos);
         }
       } else if (
         dist >= FIRE_MIN_RANGE &&
@@ -416,12 +479,14 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
           ? raycastColliders(_fromPos, _shotDir, colliders, shotDistance)
           : null;
 
-        e.attackCooldown = FIRE_COOLDOWN + Math.random() * 0.55 + (e.behavior === 2 ? -0.12 : 0.12);
+        e.attackCooldown =
+          (FIRE_COOLDOWN + Math.random() * 0.55 + (e.behavior === 2 ? -0.12 : 0.12)) *
+          fireCooldownScale;
         e.recoil = 1;
         if (coverHit && coverHit.t < shotDistance - 0.25) {
           opts.onEnemyShot?.(_fromPos, coverHit.point, false, coverHit.normal);
         } else {
-          const accuracy = THREE.MathUtils.clamp(0.78 - shotDistance * 0.014, 0.3, 0.7);
+          const accuracy = THREE.MathUtils.clamp(accuracyBase - shotDistance * 0.006, 0.2, 0.82);
           const hit = Math.random() < accuracy;
           _shotEnd.set(playerPos.x, playerPos.y + 1.15, playerPos.z);
           if (!hit) {
@@ -431,7 +496,7 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
             _shotEnd.z += (Math.random() - 0.5) * missRadius * 2;
           }
           opts.onEnemyShot?.(_fromPos, _shotEnd, hit);
-          if (hit) opts.onPlayerDamage(FIRE_DAMAGE, _fromPos);
+          if (hit) opts.onPlayerDamage(FIRE_DAMAGE * damageScale, _fromPos);
         }
       }
     }
@@ -440,7 +505,7 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
     for (const e of enemies) {
       if (e.alive) activeBodies.push(e.physicsBody);
     }
-    separateEnemyBodies(activeBodies, colliders);
+    separateEnemyBodies(activeBodies, colliders, arenaHalfSize);
   };
 
   const raycastTargets = (): THREE.Object3D[] => {

@@ -49,9 +49,16 @@ function overlapsCollider(position: THREE.Vector3, collider: Collider): boolean 
 }
 
 /** True when an upright, feet-anchored enemy capsule can occupy this point. */
-export function canEnemyOccupy(position: THREE.Vector3, colliders: readonly Collider[]): boolean {
+export function canEnemyOccupy(
+  position: THREE.Vector3,
+  colliders: readonly Collider[],
+  mapHalf: number = ENEMY_BODY.mapHalf,
+): boolean {
   if (!isFiniteVector(position)) return false;
-  const movementLimit = ENEMY_BODY.mapHalf - ENEMY_BODY.radius - ENEMY_BODY.skin;
+  const movementLimit = Math.max(
+    ENEMY_BODY.radius + ENEMY_BODY.skin,
+    mapHalf - ENEMY_BODY.radius - ENEMY_BODY.skin,
+  );
   if (
     Math.abs(position.y - ENEMY_BODY.groundY) > ENEMY_SUPPORT_EPSILON ||
     position.x < -movementLimit ||
@@ -73,14 +80,18 @@ function attemptAxisMove(
   amount: number,
   axis: "x" | "z",
   colliders: readonly Collider[],
+  mapHalf: number,
 ): void {
   if (Math.abs(amount) < 1e-8) return;
   _axisCandidate.copy(position);
   _axisCandidate[axis] += amount;
-  const movementLimit = ENEMY_BODY.mapHalf - ENEMY_BODY.radius - ENEMY_BODY.skin;
+  const movementLimit = Math.max(
+    ENEMY_BODY.radius + ENEMY_BODY.skin,
+    mapHalf - ENEMY_BODY.radius - ENEMY_BODY.skin,
+  );
   _axisCandidate[axis] = THREE.MathUtils.clamp(_axisCandidate[axis], -movementLimit, movementLimit);
   _axisCandidate.y = ENEMY_BODY.groundY;
-  if (canEnemyOccupy(_axisCandidate, colliders)) {
+  if (canEnemyOccupy(_axisCandidate, colliders, mapHalf)) {
     position[axis] = _axisCandidate[axis];
   }
 }
@@ -94,6 +105,7 @@ export function moveEnemyGrounded(
   position: THREE.Vector3,
   delta: THREE.Vector3,
   colliders: readonly Collider[],
+  mapHalf: number = ENEMY_BODY.mapHalf,
 ): void {
   if (!isFiniteVector(position)) position.set(0, ENEMY_BODY.groundY, 0);
   if (!isFiniteVector(delta)) {
@@ -110,11 +122,11 @@ export function moveEnemyGrounded(
     // Move the dominant axis first so glancing approaches retain their
     // tangential component instead of sticking to walls.
     if (Math.abs(dx) >= Math.abs(dz)) {
-      attemptAxisMove(position, dx, "x", colliders);
-      attemptAxisMove(position, dz, "z", colliders);
+      attemptAxisMove(position, dx, "x", colliders, mapHalf);
+      attemptAxisMove(position, dz, "z", colliders, mapHalf);
     } else {
-      attemptAxisMove(position, dz, "z", colliders);
-      attemptAxisMove(position, dx, "x", colliders);
+      attemptAxisMove(position, dz, "z", colliders, mapHalf);
+      attemptAxisMove(position, dx, "x", colliders, mapHalf);
     }
   }
 
@@ -147,9 +159,13 @@ export function findEnemySpawn(
   occupied: readonly THREE.Vector3[],
   playerClearRadius: number,
   random: () => number = Math.random,
+  mapHalf: number = ENEMY_BODY.mapHalf,
 ): THREE.Vector3 {
   const playerClearSq = playerClearRadius * playerClearRadius;
-  const spawnLimit = ENEMY_BODY.mapHalf - ENEMY_BODY.radius - ENEMY_BODY.skin;
+  const spawnLimit = Math.max(
+    playerClearRadius + ENEMY_BODY.minimumSpacing,
+    mapHalf - ENEMY_BODY.radius - ENEMY_BODY.skin,
+  );
 
   const valid = (x: number, z: number): boolean => {
     out.set(x, ENEMY_BODY.groundY, z);
@@ -157,7 +173,7 @@ export function findEnemySpawn(
     const dz = z - playerSpawn.z;
     return (
       dx * dx + dz * dz >= playerClearSq &&
-      canEnemyOccupy(out, colliders) &&
+      canEnemyOccupy(out, colliders, mapHalf) &&
       clearOfBodies(out, occupied, ENEMY_BODY.minimumSpacing * 1.35)
     );
   };
@@ -201,6 +217,7 @@ export function findEnemySpawn(
 export function separateEnemyBodies(
   bodies: readonly GroundedBody[],
   colliders: readonly Collider[],
+  mapHalf: number = ENEMY_BODY.mapHalf,
 ): void {
   const minimum = ENEMY_BODY.minimumSpacing;
   const minimumSq = minimum * minimum;
@@ -231,9 +248,9 @@ export function separateEnemyBodies(
         const nz = dz / directionLength;
 
         _separationDelta.set(nx * correction, 0, nz * correction);
-        moveEnemyGrounded(a.position, _separationDelta, colliders);
+        moveEnemyGrounded(a.position, _separationDelta, colliders, mapHalf);
         _separationDelta.multiplyScalar(-1);
-        moveEnemyGrounded(b.position, _separationDelta, colliders);
+        moveEnemyGrounded(b.position, _separationDelta, colliders, mapHalf);
       }
     }
   }

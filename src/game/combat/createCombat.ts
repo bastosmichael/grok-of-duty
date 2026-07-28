@@ -1,8 +1,15 @@
 import * as THREE from "three";
-import type { Collider, GameHudState, KillFeedEntry } from "@/game/types";
+import type { Collider, GameHudState, KillFeedEntry, LevelState } from "@/game/types";
 import { raycastColliders } from "@/game/player/physics";
 import { createEnemySystem } from "./enemies";
 import { createEffects } from "./effects";
+import {
+  createFighterCallsign,
+  createLevelArena,
+  createLevelProfile,
+  type LevelArena,
+  type LevelProfile,
+} from "./levels";
 
 const BODY_DAMAGE = 32;
 const HEAD_MULT = 2.15;
@@ -13,21 +20,8 @@ const MAX_RANGE = 180;
 const HIP_SPREAD = 0.0115;
 const KILL_FEED_MAX = 6;
 const KILL_FEED_TTL_MS = 4500;
-
-const ENEMY_NAMES = [
-  "Reaper-6",
-  "Vandal",
-  "Spectre",
-  "Wraith",
-  "Jackal",
-  "Marauder",
-  "Ghost",
-  "Nomad",
-  "Razor",
-  "Havoc",
-  "Sable",
-  "Kestrel",
-];
+const LEVEL_CLEAR_DELAY = 2.35;
+const LEVEL_INTRO_DELAY = 0.85;
 
 export type CreateCombatOpts = {
   scene: THREE.Scene;
@@ -36,6 +30,7 @@ export type CreateCombatOpts = {
   onPlayerDamage: (amount: number, fromWorld?: THREE.Vector3) => void;
   playHitSound?: () => void;
   playKillSound?: () => void;
+  onLevelStart?: (level: number) => void;
   /** World solid colliders for bullet occlusion / wall impacts. */
   colliders?: Collider[];
 };
@@ -58,23 +53,11 @@ export function createCombat(opts: CreateCombatOpts): CombatSystem {
     onPlayerDamage,
     playHitSound,
     playKillSound,
+    onLevelStart,
     colliders = [],
   } = opts;
 
   const effects = createEffects(scene);
-  const enemies = createEnemySystem(scene, {
-    onPlayerDamage: (amount, fromWorld) => {
-      onPlayerDamage(amount, fromWorld);
-    },
-    count: 10,
-    playerSpawn: new THREE.Vector3(0, 0, 5),
-    colliders,
-    onEnemyShot: (origin, end, hit, impactNormal) => {
-      effects.spawnTracer(origin, end, hit ? 0xff563c : 0xffb05a);
-      effects.spawnMuzzleSmoke(origin, _enemyForward.copy(end).sub(origin).normalize());
-      if (impactNormal) effects.spawnImpact(end, impactNormal);
-    },
-  });
 
   const raycaster = new THREE.Raycaster();
   const shotDir = new THREE.Vector3();
@@ -96,6 +79,54 @@ export function createCombat(opts: CreateCombatOpts): CombatSystem {
   let streak = 0;
   let killFeedId = 1;
   let killFeed: KillFeedEntry[] = [];
+  let levelNumber = 1;
+  let levelKills = 0;
+  let levelState: LevelState = "active";
+  let transitionTimer = 0;
+  let introTimer = 0;
+  const lastPlayerPosition = new THREE.Vector3();
+  let currentProfile: LevelProfile = createLevelProfile(levelNumber);
+  let currentArena: LevelArena = createLevelArena(
+    scene,
+    colliders,
+    currentProfile,
+    Math.random,
+    lastPlayerPosition,
+  );
+  let fighterNames = new Map<number, string>();
+
+  const buildEnemyWave = (profile: LevelProfile, playerPosition: THREE.Vector3) => {
+    const system = createEnemySystem(scene, {
+      onPlayerDamage: (amount, fromWorld) => {
+        onPlayerDamage(amount, fromWorld);
+      },
+      count: profile.fighterCount,
+      baseHp: profile.enemyHp,
+      baseSpeed: profile.enemySpeed,
+      damageScale: profile.enemyDamageScale,
+      fireCooldownScale: profile.enemyFireCooldownScale,
+      accuracy: profile.enemyAccuracy,
+      arenaHalfSize: profile.arenaHalfSize,
+      playerClearRadius: profile.playerClearRadius,
+      respawn: false,
+      playerSpawn: playerPosition,
+      colliders,
+      onEnemyShot: (origin, end, hit, impactNormal) => {
+        effects.spawnTracer(origin, end, hit ? 0xff563c : 0xffb05a);
+        effects.spawnMuzzleSmoke(origin, _enemyForward.copy(end).sub(origin).normalize());
+        if (impactNormal) effects.spawnImpact(end, impactNormal);
+      },
+    });
+
+    fighterNames = new Map(
+      system
+        .getEnemies()
+        .map((enemy, index) => [enemy.id, createFighterCallsign(Math.random, index + 1)]),
+    );
+    return system;
+  };
+
+  let enemies = buildEnemyWave(currentProfile, lastPlayerPosition);
 
   const pushKillFeed = (text: string): void => {
     const entry: KillFeedEntry = {
@@ -116,7 +147,42 @@ export function createCombat(opts: CreateCombatOpts): CombatSystem {
     }
   };
 
-  const enemyName = (id: number): string => ENEMY_NAMES[id % ENEMY_NAMES.length];
+  const publishLevelHud = (): void => {
+    onHud({
+      level: currentProfile.level,
+      levelName: currentProfile.codename,
+      hostilesRemaining: Math.max(0, currentProfile.fighterCount - levelKills),
+      hostilesTotal: currentProfile.fighterCount,
+      levelState,
+    });
+  };
+
+  const beginNextLevel = (): void => {
+    enemies.dispose();
+    currentArena.dispose();
+
+    levelNumber += 1;
+    levelKills = 0;
+    currentProfile = createLevelProfile(levelNumber);
+    currentArena = createLevelArena(
+      scene,
+      colliders,
+      currentProfile,
+      Math.random,
+      lastPlayerPosition,
+    );
+    enemies = buildEnemyWave(currentProfile, lastPlayerPosition);
+    levelState = "incoming";
+    introTimer = LEVEL_INTRO_DELAY;
+    transitionTimer = 0;
+    pushKillFeed(`LEVEL ${levelNumber.toString().padStart(2, "0")}  //  INCOMING`);
+    publishLevelHud();
+    onLevelStart?.(levelNumber);
+  };
+
+  const enemyName = (id: number): string => fighterNames.get(id) ?? `Unknown-${id}`;
+
+  publishLevelHud();
 
   const handleShot = (origin: THREE.Vector3, direction: THREE.Vector3, ads: boolean): void => {
     // ADS is deterministic: the sight line and the authored recoil pattern
@@ -140,7 +206,7 @@ export function createCombat(opts: CreateCombatOpts): CombatSystem {
     raycaster.set(origin, shotDir);
     raycaster.far = MAX_RANGE;
 
-    const targets = enemies.raycastTargets();
+    const targets = levelState === "active" ? enemies.raycastTargets() : [];
     const hits = raycaster.intersectObjects(targets, false);
 
     // World occlusion (cover / walls) via AABB raycast
@@ -199,6 +265,7 @@ export function createCombat(opts: CreateCombatOpts): CombatSystem {
 
     if (result.killed) {
       kills += 1;
+      levelKills += 1;
       streak += 1;
       score += SCORE_KILL + (isHead ? SCORE_HEADSHOT : 0);
       deathPos.copy(enemy.mesh.position);
@@ -210,10 +277,19 @@ export function createCombat(opts: CreateCombatOpts): CombatSystem {
         : `YOU  ✖  ${enemyName(enemy.id)}`;
       pushKillFeed(label);
 
+      if (levelKills >= currentProfile.fighterCount) {
+        levelState = "cleared";
+        transitionTimer = LEVEL_CLEAR_DELAY;
+        score += currentProfile.level * 150;
+        pushKillFeed(`LEVEL ${currentProfile.level.toString().padStart(2, "0")}  //  CLEAR`);
+      }
+
       onHud({
         score,
         kills,
         streak,
+        hostilesRemaining: Math.max(0, currentProfile.fighterCount - levelKills),
+        levelState,
         hitMarker: 1,
         hitMarkerKill: true,
         hitMarkerHeadshot: isHead,
@@ -230,16 +306,36 @@ export function createCombat(opts: CreateCombatOpts): CombatSystem {
   };
 
   const update = (dt: number, playerPos: THREE.Vector3): void => {
-    enemies.update(dt, playerPos);
-    effects.update(dt);
+    const safeDt = THREE.MathUtils.clamp(dt, 0, 0.05);
+    lastPlayerPosition.copy(playerPos);
+
+    if (levelState === "cleared") {
+      // Allow the final grounded collapse to finish before rebuilding the
+      // procedural arena and introducing the next fighter.
+      enemies.update(safeDt, playerPos);
+      transitionTimer -= safeDt;
+      if (transitionTimer <= 0) beginNextLevel();
+    } else if (levelState === "incoming") {
+      introTimer -= safeDt;
+      if (introTimer <= 0) {
+        introTimer = 0;
+        levelState = "active";
+        publishLevelHud();
+      }
+    } else {
+      enemies.update(safeDt, playerPos);
+    }
+
+    effects.update(safeDt);
     pruneKillFeed();
-    void camera;
   };
 
   const dispose = (): void => {
     enemies.dispose();
+    currentArena.dispose();
     effects.dispose();
     killFeed = [];
+    fighterNames.clear();
   };
 
   return { handleShot, update, dispose };

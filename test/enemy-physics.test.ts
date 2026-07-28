@@ -127,6 +127,31 @@ describe("enemy grounded physics", () => {
     expect(position.y).toBe(ENEMY_BODY.groundY);
   });
 
+  test("supports compact early-level arena bounds for spawning and movement", () => {
+    const arenaHalf = 16;
+    const player = new THREE.Vector3();
+    const spawn = findEnemySpawn(
+      player,
+      new THREE.Vector3(),
+      [],
+      [],
+      7.5,
+      seededRandom(41),
+      arenaHalf,
+    ).clone();
+    const movementLimit = arenaHalf - ENEMY_BODY.radius - ENEMY_BODY.skin;
+
+    expect(Math.abs(spawn.x)).toBeLessThanOrEqual(movementLimit);
+    expect(Math.abs(spawn.z)).toBeLessThanOrEqual(movementLimit);
+    expect(planarDistance(spawn, player)).toBeGreaterThanOrEqual(7.5);
+    expect(canEnemyOccupy(spawn, [], arenaHalf)).toBe(true);
+
+    moveEnemyGrounded(spawn, new THREE.Vector3(100, 0, -100), [], arenaHalf);
+    expect(Math.abs(spawn.x)).toBeLessThanOrEqual(movementLimit);
+    expect(Math.abs(spawn.z)).toBeLessThanOrEqual(movementLimit);
+    expect(spawn.y).toBe(ENEMY_BODY.groundY);
+  });
+
   test("separates exact-overlap bodies without NaN or loss of ground contact", () => {
     const bodies = [
       { id: 3, position: new THREE.Vector3(4, 0, 4) },

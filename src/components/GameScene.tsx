@@ -105,6 +105,11 @@ export default function GameScene({ onExit }: Props) {
         },
         playHitSound: () => audio.playHit(),
         playKillSound: () => audio.playKill(),
+        onLevelStart: (level) => {
+          // A small between-level recovery keeps early progression welcoming
+          // without erasing the pressure of later, denser encounters.
+          playerRef.current?.heal(Math.min(24, 10 + level * 2));
+        },
       });
       disposers.push(() => combat.dispose());
       setLoad(0.72, "Spawning hostiles…");
