@@ -521,12 +521,22 @@ export function GameHUD({ state, onExit, onEngage, touch = false }: GameHUDProps
       {/* Deployment / pointer-lock briefing */}
       {ready && !locked && (
         <div
-          className="pointer-events-auto absolute inset-0 z-30 flex items-start justify-center overflow-y-auto bg-black/55 px-3 py-4 backdrop-blur-[3px] md:items-center md:px-4 md:py-6"
+          className="pointer-events-auto absolute inset-0 z-30 flex items-start justify-center overflow-y-auto overscroll-contain bg-black/55 backdrop-blur-[3px] md:items-center"
+          style={{
+            // The scene root sets `touch-action: none` for the game canvas, which
+            // would otherwise make this briefing impossible to scroll on phones.
+            touchAction: "pan-y",
+            paddingTop: "calc(env(safe-area-inset-top) + 1rem)",
+            paddingBottom: "calc(env(safe-area-inset-bottom) + 1.5rem)",
+            paddingLeft: "calc(env(safe-area-inset-left) + .75rem)",
+            paddingRight: "calc(env(safe-area-inset-right) + .75rem)",
+          }}
           role="dialog"
           aria-modal="true"
           aria-labelledby="combat-briefing-title"
           onKeyDown={handleBriefingKeyDown}
         >
+
           <div
             className="hud-motion relative w-full max-w-3xl overflow-hidden border border-white/15 bg-[#0a0c0d]/96 shadow-[0_30px_100px_rgba(0,0,0,.85),0_0_50px_color-mix(in_oklab,var(--primary)_9%,transparent)]"
             style={{ animation: "briefing-in .38s ease-out both" }}
