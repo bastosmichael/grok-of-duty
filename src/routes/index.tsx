@@ -7,6 +7,24 @@ const WebGLCube = lazy(() => import("@/components/WebGLCube"));
 const GameScene = lazy(() => import("@/components/GameScene"));
 
 export const Route = createFileRoute("/")({
+  head: () => ({
+    meta: [
+      { title: "Grok Of Duty — Play a 3D Tactical Shooter in Your Browser" },
+      {
+        name: "description",
+        content:
+          "Grok Of Duty is a zero-install browser FPS. Play instantly on desktop, tablet, or phone with touch controls, and follow the multiplayer roadmap.",
+      },
+      { property: "og:title", content: "Grok Of Duty — Browser 3D Tactical Shooter" },
+      {
+        property: "og:description",
+        content:
+          "Zero-install browser FPS with touch controls on mobile and tablet. Drop in, gear up, dominate.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: Index,
 });
 
@@ -93,12 +111,12 @@ function Index() {
       </ClientOnly>
       {/* NAV */}
       <header className="fixed top-0 z-50 w-full border-b border-border/60 bg-background/70 backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
           <a
             href="#top"
-            className="flex items-center gap-2 font-[Orbitron] text-lg font-black tracking-widest"
+            className="flex min-w-0 items-center gap-2 truncate font-[Orbitron] text-sm font-black tracking-widest sm:text-lg"
           >
-            <span className="inline-block h-2 w-2 rounded-full bg-primary animate-pulse-glow" />
+            <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-primary animate-pulse-glow" />
             GROK<span className="text-primary">·</span>OF<span className="text-primary">·</span>DUTY
           </a>
           <nav className="hidden gap-8 text-sm font-semibold uppercase tracking-widest text-muted-foreground md:flex">
@@ -114,7 +132,7 @@ function Index() {
           </nav>
           <button
             onClick={launch}
-            className="hidden md:inline-flex items-center gap-2 border border-primary/60 px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary hover:bg-primary hover:text-primary-foreground transition-colors clip-tactical"
+            className="inline-flex shrink-0 items-center gap-2 border border-primary/60 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-primary hover:bg-primary hover:text-primary-foreground transition-colors clip-tactical sm:px-4 sm:text-xs"
           >
             Deploy ▸
           </button>
@@ -136,7 +154,7 @@ function Index() {
           <div className="absolute inset-0 scanline opacity-30 pointer-events-none" />
         </div>
 
-        <div className="relative z-10 mx-auto flex min-h-screen max-w-7xl flex-col justify-end px-6 pb-20 pt-32">
+        <div className="relative z-10 mx-auto flex min-h-screen max-w-7xl flex-col justify-end px-4 pb-16 pt-28 sm:px-6 sm:pb-20 sm:pt-32">
           {/* Corner HUD */}
           <div className="absolute left-6 top-24 hidden md:block">
             <div className="border-l-2 border-primary pl-3 text-xs font-mono uppercase tracking-widest text-primary">
@@ -154,27 +172,30 @@ function Index() {
           </div>
 
           <div className="max-w-3xl">
-            <div className="mb-4 inline-flex items-center gap-2 border border-primary/40 bg-primary/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.3em] text-primary">
+            <div className="mb-4 inline-flex items-center gap-2 border border-primary/40 bg-primary/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.25em] text-primary sm:text-xs sm:tracking-[0.3em]">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
               Operation Live · Browser Deployable
             </div>
-            <h1 className="font-[Orbitron] text-6xl font-black uppercase leading-[0.9] tracking-tight text-foreground md:text-8xl">
+            <h1 className="font-[Orbitron] text-[clamp(2.75rem,13vw,4.5rem)] font-black uppercase leading-[0.9] tracking-tight text-foreground md:text-8xl">
               Grok Of
               <br />
               <span className="text-primary text-glow">Duty</span>
             </h1>
-            <p className="mt-6 max-w-xl text-lg text-muted-foreground md:text-xl">
+            <p className="mt-5 max-w-xl text-base text-muted-foreground sm:mt-6 sm:text-lg md:text-xl">
               A browser-native 3D tactical shooter. No downloads. No launcher. Just drop in, gear
               up, and dominate the battlefield from any device.
             </p>
 
-            <div className="mt-10 flex flex-wrap items-center gap-4">
-              <button onClick={launch} className="btn-tactical animate-pulse-glow text-base">
+            <div className="mt-8 flex flex-wrap items-center gap-3 sm:mt-10 sm:gap-4">
+              <button
+                onClick={launch}
+                className="btn-tactical animate-pulse-glow w-full text-sm sm:w-auto sm:text-base"
+              >
                 ▶ Play Now
               </button>
               <a
                 href="#roadmap"
-                className="inline-flex items-center gap-3 border border-border px-6 py-4 text-xs font-bold uppercase tracking-widest text-foreground hover:border-primary hover:text-primary transition-colors clip-tactical"
+                className="inline-flex w-full items-center justify-center gap-3 border border-border px-6 py-4 text-xs font-bold uppercase tracking-widest text-foreground hover:border-primary hover:text-primary transition-colors clip-tactical sm:w-auto"
               >
                 View Roadmap
               </a>
@@ -184,9 +205,9 @@ function Index() {
       </section>
 
       {/* FEATURES */}
-      <section id="features" className="relative border-t border-border bg-background py-24">
-        <div className="mx-auto max-w-7xl px-6">
-          <div className="mb-16 flex items-end justify-between">
+      <section id="features" className="relative border-t border-border bg-background py-16 sm:py-24">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6">
+          <div className="mb-10 flex flex-col gap-6 sm:mb-16 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <div className="mb-3 text-xs font-mono uppercase tracking-[0.4em] text-primary">
                 // 001 · Loadout
@@ -207,7 +228,7 @@ function Index() {
             {features.map((f) => (
               <div
                 key={f.title}
-                className="group relative bg-card p-8 transition-colors hover:bg-card/70"
+                className="group relative bg-card p-6 sm:p-8 transition-colors hover:bg-card/70"
               >
                 <div className="text-xs font-mono uppercase tracking-widest text-primary">
                   {f.tag}
@@ -223,9 +244,9 @@ function Index() {
       </section>
 
       {/* ROADMAP */}
-      <section id="roadmap" className="relative border-t border-border bg-card/30 py-24">
+      <section id="roadmap" className="relative border-t border-border bg-card/30 py-16 sm:py-24">
         <div className="absolute inset-0 grid-lines opacity-20 pointer-events-none" />
-        <div className="relative mx-auto max-w-7xl px-6">
+        <div className="relative mx-auto max-w-7xl px-4 sm:px-6">
           <div className="mb-16">
             <div className="mb-3 text-xs font-mono uppercase tracking-[0.4em] text-primary">
               // 002 · Mission Timeline
@@ -277,9 +298,9 @@ function Index() {
       </section>
 
       {/* CTA */}
-      <section id="ops" className="relative overflow-hidden border-t border-border py-24">
+      <section id="ops" className="relative overflow-hidden border-t border-border py-16 sm:py-24">
         <div className="absolute inset-0 scanline opacity-30 pointer-events-none" />
-        <div className="relative mx-auto max-w-4xl px-6 text-center">
+        <div className="relative mx-auto max-w-4xl px-4 text-center sm:px-6">
           <div className="mb-3 text-xs font-mono uppercase tracking-[0.4em] text-primary">
             // STANDBY
           </div>
@@ -302,7 +323,7 @@ function Index() {
 
       {/* FOOTER */}
       <footer className="border-t border-border bg-background py-10">
-        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-6 text-xs uppercase tracking-widest text-muted-foreground md:flex-row">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 text-center text-[10px] uppercase sm:px-6 sm:text-xs tracking-widest text-muted-foreground md:flex-row">
           <div className="font-[Orbitron] font-bold text-foreground">
             GROK·OF·DUTY <span className="text-primary">// 0.4.1-ALPHA</span>
           </div>
