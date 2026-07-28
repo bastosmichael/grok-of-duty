@@ -19,6 +19,18 @@ export default function GameScene({ onExit }: Props) {
   const audioRef = useRef<ReturnType<typeof createAudio> | null>(null);
   const gfxRef = useRef<ReturnType<typeof createRenderer> | null>(null);
 
+  // Touch devices can't use pointer lock, so the player controller switches to
+  // on-screen stick + buttons instead.
+  const [touchMode] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return (
+      window.matchMedia?.("(pointer: coarse)").matches === true ||
+      (navigator.maxTouchPoints ?? 0) > 0
+    );
+  });
+  const touchModeRef = useRef(touchMode);
+  touchModeRef.current = touchMode;
+
   const mergeHud = useCallback((partial: Partial<GameHudState>) => {
     setHud((prev) => {
       const next: GameHudState = { ...prev, ...partial };
