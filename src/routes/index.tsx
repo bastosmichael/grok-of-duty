@@ -7,6 +7,24 @@ const WebGLCube = lazy(() => import("@/components/WebGLCube"));
 const GameScene = lazy(() => import("@/components/GameScene"));
 
 export const Route = createFileRoute("/")({
+  head: () => ({
+    meta: [
+      { title: "Grok Of Duty — Play a 3D Tactical Shooter in Your Browser" },
+      {
+        name: "description",
+        content:
+          "Grok Of Duty is a zero-install browser FPS. Play instantly on desktop, tablet, or phone with touch controls, and follow the multiplayer roadmap.",
+      },
+      { property: "og:title", content: "Grok Of Duty — Browser 3D Tactical Shooter" },
+      {
+        property: "og:description",
+        content:
+          "Zero-install browser FPS with touch controls on mobile and tablet. Drop in, gear up, dominate.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: Index,
 });
 
