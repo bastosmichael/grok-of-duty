@@ -93,12 +93,12 @@ function Index() {
       </ClientOnly>
       {/* NAV */}
       <header className="fixed top-0 z-50 w-full border-b border-border/60 bg-background/70 backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
           <a
             href="#top"
-            className="flex items-center gap-2 font-[Orbitron] text-lg font-black tracking-widest"
+            className="flex min-w-0 items-center gap-2 truncate font-[Orbitron] text-sm font-black tracking-widest sm:text-lg"
           >
-            <span className="inline-block h-2 w-2 rounded-full bg-primary animate-pulse-glow" />
+            <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-primary animate-pulse-glow" />
             GROK<span className="text-primary">·</span>OF<span className="text-primary">·</span>DUTY
           </a>
           <nav className="hidden gap-8 text-sm font-semibold uppercase tracking-widest text-muted-foreground md:flex">
@@ -114,7 +114,7 @@ function Index() {
           </nav>
           <button
             onClick={launch}
-            className="hidden md:inline-flex items-center gap-2 border border-primary/60 px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary hover:bg-primary hover:text-primary-foreground transition-colors clip-tactical"
+            className="inline-flex shrink-0 items-center gap-2 border border-primary/60 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-primary hover:bg-primary hover:text-primary-foreground transition-colors clip-tactical sm:px-4 sm:text-xs"
           >
             Deploy ▸
           </button>
