@@ -136,7 +136,7 @@ function Index() {
           <div className="absolute inset-0 scanline opacity-30 pointer-events-none" />
         </div>
 
-        <div className="relative z-10 mx-auto flex min-h-screen max-w-7xl flex-col justify-end px-6 pb-20 pt-32">
+        <div className="relative z-10 mx-auto flex min-h-screen max-w-7xl flex-col justify-end px-4 pb-16 pt-28 sm:px-6 sm:pb-20 sm:pt-32">>
           {/* Corner HUD */}
           <div className="absolute left-6 top-24 hidden md:block">
             <div className="border-l-2 border-primary pl-3 text-xs font-mono uppercase tracking-widest text-primary">
