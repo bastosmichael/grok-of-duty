@@ -1,10 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { ClientOnly } from "@tanstack/react-router";
 import heroImg from "@/assets/hero.jpg";
+import AdSlot from "@/components/AdSlot";
+import { AD_SLOTS } from "@/lib/google-services";
 
 const WebGLCube = lazy(() => import("@/components/WebGLCube"));
 const GameScene = lazy(() => import("@/components/GameScene"));
+
 
 export const Route = createFileRoute("/")({
   head: () => ({
