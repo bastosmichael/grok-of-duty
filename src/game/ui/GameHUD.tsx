@@ -476,8 +476,11 @@ export function GameHUD({ state, onExit, onEngage, touch = false }: GameHUDProps
 
       {/* Weapon telemetry */}
       <section
-        className={`hud-motion absolute bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] text-right font-mono uppercase ${touch ? "scale-[.82] origin-bottom-right opacity-90 max-[820px]:bottom-[11.5rem]" : ""}`}
-        style={{ animation: "hud-enter .5s .18s ease-out both" }}
+        className={`hud-motion absolute bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] text-right font-mono uppercase ${touch ? "scale-[.8] origin-top-right opacity-90" : ""}`}
+        style={{
+          animation: "hud-enter .5s .18s ease-out both",
+          ...(touch ? { top: "9rem", bottom: "auto" } : null),
+        }}
         aria-label="Weapon status"
       >
         <div className="relative min-w-[clamp(11.5rem,22vw,17rem)] overflow-hidden border-r-2 border-white/70 bg-gradient-to-l from-black/78 via-black/52 to-transparent py-2 pl-9 pr-3 backdrop-blur-[2px]">
