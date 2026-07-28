@@ -522,7 +522,6 @@ export function GameHUD({ state, onExit, onEngage, touch = false }: GameHUDProps
                 : touch
                   ? "TAP R · RELOAD"
                   : "R · RELOAD"}
-
           </div>
         </div>
       </section>
@@ -545,7 +544,6 @@ export function GameHUD({ state, onExit, onEngage, touch = false }: GameHUDProps
           aria-labelledby="combat-briefing-title"
           onKeyDown={handleBriefingKeyDown}
         >
-
           <div
             className="hud-motion relative w-full max-w-3xl overflow-hidden border border-white/15 bg-[#0a0c0d]/96 shadow-[0_30px_100px_rgba(0,0,0,.85),0_0_50px_color-mix(in_oklab,var(--primary)_9%,transparent)]"
             style={{ animation: "briefing-in .38s ease-out both" }}
