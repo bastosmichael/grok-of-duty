@@ -187,9 +187,9 @@ function Index() {
       </section>
 
       {/* FEATURES */}
-      <section id="features" className="relative border-t border-border bg-background py-24">
-        <div className="mx-auto max-w-7xl px-6">
-          <div className="mb-16 flex items-end justify-between">
+      <section id="features" className="relative border-t border-border bg-background py-16 sm:py-24">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6">
+          <div className="mb-10 flex flex-col gap-6 sm:mb-16 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <div className="mb-3 text-xs font-mono uppercase tracking-[0.4em] text-primary">
                 // 001 · Loadout
@@ -210,7 +210,7 @@ function Index() {
             {features.map((f) => (
               <div
                 key={f.title}
-                className="group relative bg-card p-8 transition-colors hover:bg-card/70"
+                className="group relative bg-card p-6 sm:p-8 transition-colors hover:bg-card/70"
               >
                 <div className="text-xs font-mono uppercase tracking-widest text-primary">
                   {f.tag}
@@ -226,9 +226,9 @@ function Index() {
       </section>
 
       {/* ROADMAP */}
-      <section id="roadmap" className="relative border-t border-border bg-card/30 py-24">
+      <section id="roadmap" className="relative border-t border-border bg-card/30 py-16 sm:py-24">
         <div className="absolute inset-0 grid-lines opacity-20 pointer-events-none" />
-        <div className="relative mx-auto max-w-7xl px-6">
+        <div className="relative mx-auto max-w-7xl px-4 sm:px-6">
           <div className="mb-16">
             <div className="mb-3 text-xs font-mono uppercase tracking-[0.4em] text-primary">
               // 002 · Mission Timeline
@@ -280,9 +280,9 @@ function Index() {
       </section>
 
       {/* CTA */}
-      <section id="ops" className="relative overflow-hidden border-t border-border py-24">
+      <section id="ops" className="relative overflow-hidden border-t border-border py-16 sm:py-24">
         <div className="absolute inset-0 scanline opacity-30 pointer-events-none" />
-        <div className="relative mx-auto max-w-4xl px-6 text-center">
+        <div className="relative mx-auto max-w-4xl px-4 text-center sm:px-6">
           <div className="mb-3 text-xs font-mono uppercase tracking-[0.4em] text-primary">
             // STANDBY
           </div>
@@ -305,7 +305,7 @@ function Index() {
 
       {/* FOOTER */}
       <footer className="border-t border-border bg-background py-10">
-        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-6 text-xs uppercase tracking-widest text-muted-foreground md:flex-row">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 text-center text-[10px] uppercase sm:px-6 sm:text-xs tracking-widest text-muted-foreground md:flex-row">
           <div className="font-[Orbitron] font-bold text-foreground">
             GROK·OF·DUTY <span className="text-primary">// 0.4.1-ALPHA</span>
           </div>
