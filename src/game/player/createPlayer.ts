@@ -4,6 +4,7 @@ import { createWeapon, type WeaponController } from "./weapon";
 import { canOccupyHeight, PHYSICS, resolveBody, type PhysicsBody } from "./physics";
 
 const LOOK_SENS = 0.002;
+const TOUCH_LOOK_SENS = 0.0038;
 const PI_2 = Math.PI / 2;
 
 const FOV_HIP = 75;
@@ -40,6 +41,20 @@ export function createPlayer(opts: {
   update: (dt: number) => void;
   isLocked: () => boolean;
   requestLock: () => void;
+  /** Switches the controller to on-screen touch input (no pointer lock). */
+  setTouchMode: (enabled: boolean) => void;
+  /** Releases touch play session (returns to briefing). */
+  releaseTouch: () => void;
+  touch: {
+    move: (x: number, y: number) => void;
+    look: (dx: number, dy: number) => void;
+    setFire: (down: boolean) => void;
+    setAds: (down: boolean) => void;
+    setSprint: (down: boolean) => void;
+    toggleCrouch: () => void;
+    jump: () => void;
+    reload: () => void;
+  };
   getPosition: () => THREE.Vector3;
   takeDamage: (amount: number, fromWorld?: THREE.Vector3) => void;
   heal: (amount: number) => void;
@@ -100,6 +115,16 @@ export function createPlayer(opts: {
   const keys: Record<string, boolean> = {};
   let fireHeld = false;
   let adsHeld = false;
+
+  // --- Touch (phone/tablet) input state ---
+  let touchMode = false;
+  let touchActive = false;
+  let touchMoveX = 0;
+  let touchMoveY = 0;
+  let touchLookDx = 0;
+  let touchLookDy = 0;
+  let touchSprint = false;
+  let touchCrouch = false;
 
   // Previous HUD snapshot to avoid spam
   let lastHud: Partial<GameHudState> = {};
