@@ -101,14 +101,23 @@ function Index() {
       {/* NAV */}
       <header className="fixed top-0 z-50 w-full border-b border-border/60 bg-background/70 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
-          <a href="#top" className="flex items-center gap-2 font-[Orbitron] text-lg font-black tracking-widest">
+          <a
+            href="#top"
+            className="flex items-center gap-2 font-[Orbitron] text-lg font-black tracking-widest"
+          >
             <span className="inline-block h-2 w-2 rounded-full bg-primary animate-pulse-glow" />
             GROK<span className="text-primary">·</span>OF<span className="text-primary">·</span>DUTY
           </a>
           <nav className="hidden gap-8 text-sm font-semibold uppercase tracking-widest text-muted-foreground md:flex">
-            <a href="#features" className="hover:text-primary transition-colors">Arsenal</a>
-            <a href="#roadmap" className="hover:text-primary transition-colors">Roadmap</a>
-            <a href="#ops" className="hover:text-primary transition-colors">Ops</a>
+            <a href="#features" className="hover:text-primary transition-colors">
+              Arsenal
+            </a>
+            <a href="#roadmap" className="hover:text-primary transition-colors">
+              Roadmap
+            </a>
+            <a href="#ops" className="hover:text-primary transition-colors">
+              Ops
+            </a>
           </nav>
           <button
             onClick={launch}
@@ -122,7 +131,13 @@ function Index() {
       {/* HERO */}
       <section id="top" className="relative min-h-screen overflow-hidden pt-16">
         <div className="absolute inset-x-0 bottom-0 top-16">
-          <img src={heroImg} alt="Grok Of Duty warzone" width={1920} height={1088} className="h-full w-full object-cover object-[center_30%] opacity-70" />
+          <img
+            src={heroImg}
+            alt="Grok Of Duty warzone"
+            width={1920}
+            height={1088}
+            className="h-full w-full object-cover object-[center_30%] opacity-70"
+          />
           <div className="absolute inset-0" style={{ background: "var(--gradient-hero)" }} />
           <div className="absolute inset-0 grid-lines opacity-40" />
           <div className="absolute inset-0 scanline opacity-30 pointer-events-none" />
@@ -151,17 +166,23 @@ function Index() {
               Operation Live · Browser Deployable
             </div>
             <h1 className="font-[Orbitron] text-6xl font-black uppercase leading-[0.9] tracking-tight text-foreground md:text-8xl">
-              Grok Of<br /><span className="text-primary text-glow">Duty</span>
+              Grok Of
+              <br />
+              <span className="text-primary text-glow">Duty</span>
             </h1>
             <p className="mt-6 max-w-xl text-lg text-muted-foreground md:text-xl">
-              A browser-native 3D tactical shooter. No downloads. No launcher. Just drop in, gear up, and dominate the battlefield from any device.
+              A browser-native 3D tactical shooter. No downloads. No launcher. Just drop in, gear
+              up, and dominate the battlefield from any device.
             </p>
 
             <div className="mt-10 flex flex-wrap items-center gap-4">
               <button onClick={launch} className="btn-tactical animate-pulse-glow text-base">
                 ▶ Play Now
               </button>
-              <a href="#roadmap" className="inline-flex items-center gap-3 border border-border px-6 py-4 text-xs font-bold uppercase tracking-widest text-foreground hover:border-primary hover:text-primary transition-colors clip-tactical">
+              <a
+                href="#roadmap"
+                className="inline-flex items-center gap-3 border border-border px-6 py-4 text-xs font-bold uppercase tracking-widest text-foreground hover:border-primary hover:text-primary transition-colors clip-tactical"
+              >
                 View Roadmap
               </a>
             </div>
@@ -171,7 +192,9 @@ function Index() {
               {stats.map((s) => (
                 <div key={s.label} className="bg-card/80 p-4 backdrop-blur">
                   <div className="font-[Orbitron] text-2xl font-black text-primary">{s.value}</div>
-                  <div className="mt-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{s.label}</div>
+                  <div className="mt-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                    {s.label}
+                  </div>
                 </div>
               ))}
             </div>
@@ -184,18 +207,30 @@ function Index() {
         <div className="mx-auto max-w-7xl px-6">
           <div className="mb-16 flex items-end justify-between">
             <div>
-              <div className="mb-3 text-xs font-mono uppercase tracking-[0.4em] text-primary">// 001 · Loadout</div>
-              <h2 className="font-[Orbitron] text-4xl font-black uppercase md:text-6xl">Built For<br />The Web.</h2>
+              <div className="mb-3 text-xs font-mono uppercase tracking-[0.4em] text-primary">
+                // 001 · Loadout
+              </div>
+              <h2 className="font-[Orbitron] text-4xl font-black uppercase md:text-6xl">
+                Built For
+                <br />
+                The Web.
+              </h2>
             </div>
             <div className="hidden max-w-sm text-right text-sm text-muted-foreground md:block">
-              Engineered from the ground up to deliver console-grade FPS action inside a browser tab.
+              Engineered from the ground up to deliver console-grade FPS action inside a browser
+              tab.
             </div>
           </div>
 
           <div className="grid gap-px bg-border md:grid-cols-3">
             {features.map((f) => (
-              <div key={f.title} className="group relative bg-card p-8 transition-colors hover:bg-card/70">
-                <div className="text-xs font-mono uppercase tracking-widest text-primary">{f.tag}</div>
+              <div
+                key={f.title}
+                className="group relative bg-card p-8 transition-colors hover:bg-card/70"
+              >
+                <div className="text-xs font-mono uppercase tracking-widest text-primary">
+                  {f.tag}
+                </div>
                 <h3 className="mt-4 font-[Orbitron] text-2xl font-bold uppercase">{f.title}</h3>
                 <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{f.body}</p>
                 <div className="absolute right-4 top-4 h-3 w-3 border-r-2 border-t-2 border-primary opacity-0 transition-opacity group-hover:opacity-100" />
@@ -211,18 +246,34 @@ function Index() {
         <div className="absolute inset-0 grid-lines opacity-20 pointer-events-none" />
         <div className="relative mx-auto max-w-7xl px-6">
           <div className="mb-16">
-            <div className="mb-3 text-xs font-mono uppercase tracking-[0.4em] text-primary">// 002 · Mission Timeline</div>
-            <h2 className="font-[Orbitron] text-4xl font-black uppercase md:text-6xl">Deployment<br />Roadmap</h2>
-            <p className="mt-4 max-w-xl text-muted-foreground">Four phases from single-player training to full-scale warzone. Track our progress from Recon to Command.</p>
+            <div className="mb-3 text-xs font-mono uppercase tracking-[0.4em] text-primary">
+              // 002 · Mission Timeline
+            </div>
+            <h2 className="font-[Orbitron] text-4xl font-black uppercase md:text-6xl">
+              Deployment
+              <br />
+              Roadmap
+            </h2>
+            <p className="mt-4 max-w-xl text-muted-foreground">
+              Four phases from single-player training to full-scale warzone. Track our progress from
+              Recon to Command.
+            </p>
           </div>
 
           <div className="grid gap-6 md:grid-cols-2">
             {roadmap.map((r) => (
-              <div key={r.phase} className="relative border border-border bg-background/60 p-6 backdrop-blur transition-colors hover:border-primary/50">
+              <div
+                key={r.phase}
+                className="relative border border-border bg-background/60 p-6 backdrop-blur transition-colors hover:border-primary/50"
+              >
                 <div className="flex items-start justify-between">
                   <div>
-                    <div className="text-xs font-mono uppercase tracking-[0.3em] text-primary">{r.phase}</div>
-                    <div className="mt-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{r.quarter}</div>
+                    <div className="text-xs font-mono uppercase tracking-[0.3em] text-primary">
+                      {r.phase}
+                    </div>
+                    <div className="mt-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                      {r.quarter}
+                    </div>
                   </div>
                   <StatusBadge status={r.status} />
                 </div>
@@ -248,12 +299,17 @@ function Index() {
       <section id="ops" className="relative overflow-hidden border-t border-border py-24">
         <div className="absolute inset-0 scanline opacity-30 pointer-events-none" />
         <div className="relative mx-auto max-w-4xl px-6 text-center">
-          <div className="mb-3 text-xs font-mono uppercase tracking-[0.4em] text-primary">// STANDBY</div>
+          <div className="mb-3 text-xs font-mono uppercase tracking-[0.4em] text-primary">
+            // STANDBY
+          </div>
           <h2 className="font-[Orbitron] text-4xl font-black uppercase md:text-6xl">
-            The battlefield<br />is <span className="text-primary text-glow">one click</span> away.
+            The battlefield
+            <br />
+            is <span className="text-primary text-glow">one click</span> away.
           </h2>
           <p className="mx-auto mt-6 max-w-xl text-muted-foreground">
-            Grok Of Duty is entering closed alpha. Deploy now to secure your callsign and receive first access when servers go live.
+            Grok Of Duty is entering closed alpha. Deploy now to secure your callsign and receive
+            first access when servers go live.
           </p>
           <div className="mt-10">
             <button onClick={launch} className="btn-tactical text-base">
@@ -266,7 +322,9 @@ function Index() {
       {/* FOOTER */}
       <footer className="border-t border-border bg-background py-10">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-6 text-xs uppercase tracking-widest text-muted-foreground md:flex-row">
-          <div className="font-[Orbitron] font-bold text-foreground">GROK·OF·DUTY <span className="text-primary">// 0.4.1-ALPHA</span></div>
+          <div className="font-[Orbitron] font-bold text-foreground">
+            GROK·OF·DUTY <span className="text-primary">// 0.4.1-ALPHA</span>
+          </div>
           <div>© 2026 Grok Of Duty. All operators reserved.</div>
         </div>
       </footer>
@@ -281,10 +339,22 @@ function Index() {
             className="relative max-w-md border border-primary/50 bg-card p-8 shadow-[var(--shadow-elegant)]"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="text-xs font-mono uppercase tracking-[0.3em] text-primary">// TRANSMISSION</div>
-            <h3 className="mt-3 font-[Orbitron] text-2xl font-black uppercase">Servers Warming Up</h3>
+            <div className="text-xs font-mono uppercase tracking-[0.3em] text-primary">
+              // TRANSMISSION
+            </div>
+            <h3 className="mt-3 font-[Orbitron] text-2xl font-black uppercase">
+              Servers Warming Up
+            </h3>
             <p className="mt-4 text-sm text-muted-foreground">
-              Multiplayer servers are in closed alpha. Check the <a href="#roadmap" onClick={() => setDialogOpen(false)} className="text-primary underline underline-offset-4">roadmap</a> for launch windows.
+              Multiplayer servers are in closed alpha. Check the{" "}
+              <a
+                href="#roadmap"
+                onClick={() => setDialogOpen(false)}
+                className="text-primary underline underline-offset-4"
+              >
+                roadmap
+              </a>{" "}
+              for launch windows.
             </p>
             <button
               onClick={() => setDialogOpen(false)}
@@ -326,12 +396,17 @@ function GameLoading() {
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; className: string }> = {
     live: { label: "● LIVE", className: "bg-primary/20 text-primary border-primary/60" },
-    active: { label: "◐ IN DEV", className: "bg-primary/10 text-primary border-primary/40 animate-pulse" },
+    active: {
+      label: "◐ IN DEV",
+      className: "bg-primary/10 text-primary border-primary/40 animate-pulse",
+    },
     planned: { label: "○ PLANNED", className: "bg-muted text-muted-foreground border-border" },
   };
   const s = map[status] ?? map.planned;
   return (
-    <div className={`border px-2 py-1 text-[10px] font-mono font-bold uppercase tracking-widest ${s.className}`}>
+    <div
+      className={`border px-2 py-1 text-[10px] font-mono font-bold uppercase tracking-widest ${s.className}`}
+    >
       {s.label}
     </div>
   );

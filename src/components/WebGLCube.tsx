@@ -28,7 +28,9 @@ export default function WebGLCube() {
   // Effective paused state: user override wins, otherwise follow OS
   const paused = userPaused ?? prefersReduced;
   const pausedRef = useRef(paused);
-  useEffect(() => { pausedRef.current = paused; }, [paused]);
+  useEffect(() => {
+    pausedRef.current = paused;
+  }, [paused]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -68,13 +70,10 @@ export default function WebGLCube() {
     gl.useProgram(prog);
 
     const verts = new Float32Array([
-      -1,-1,-1,  1,-1,-1,  1, 1,-1, -1, 1,-1,
-      -1,-1, 1,  1,-1, 1,  1, 1, 1, -1, 1, 1,
+      -1, -1, -1, 1, -1, -1, 1, 1, -1, -1, 1, -1, -1, -1, 1, 1, -1, 1, 1, 1, 1, -1, 1, 1,
     ]);
     const edges = new Uint16Array([
-      0,1, 1,2, 2,3, 3,0,
-      4,5, 5,6, 6,7, 7,4,
-      0,4, 1,5, 2,6, 3,7,
+      0, 1, 1, 2, 2, 3, 3, 0, 4, 5, 5, 6, 6, 7, 7, 4, 0, 4, 1, 5, 2, 6, 3, 7,
     ]);
 
     const vbo = gl.createBuffer();
@@ -93,24 +92,60 @@ export default function WebGLCube() {
 
     const mul = (a: number[], b: number[]) => {
       const r = new Array(16).fill(0);
-      for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++)
-        for (let k = 0; k < 4; k++) r[i*4+j] += a[i*4+k] * b[k*4+j];
+      for (let i = 0; i < 4; i++)
+        for (let j = 0; j < 4; j++)
+          for (let k = 0; k < 4; k++) r[i * 4 + j] += a[i * 4 + k] * b[k * 4 + j];
       return r;
     };
     const perspective = (fov: number, aspect: number, n: number, f: number) => {
       const t = 1 / Math.tan(fov / 2);
-      return [t/aspect,0,0,0, 0,t,0,0, 0,0,(f+n)/(n-f),-1, 0,0,(2*f*n)/(n-f),0];
+      return [
+        t / aspect,
+        0,
+        0,
+        0,
+        0,
+        t,
+        0,
+        0,
+        0,
+        0,
+        (f + n) / (n - f),
+        -1,
+        0,
+        0,
+        (2 * f * n) / (n - f),
+        0,
+      ];
     };
     const rotY = (a: number) => {
-      const c = Math.cos(a), s = Math.sin(a);
-      return [c,0,-s,0, 0,1,0,0, s,0,c,0, 0,0,0,1];
+      const c = Math.cos(a),
+        s = Math.sin(a);
+      return [c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1];
     };
     const rotX = (a: number) => {
-      const c = Math.cos(a), s = Math.sin(a);
-      return [1,0,0,0, 0,c,s,0, 0,-s,c,0, 0,0,0,1];
+      const c = Math.cos(a),
+        s = Math.sin(a);
+      return [1, 0, 0, 0, 0, c, s, 0, 0, -s, c, 0, 0, 0, 0, 1];
     };
-    const translate = (x: number, y: number, z: number) =>
-      [1,0,0,0, 0,1,0,0, 0,0,1,0, x,y,z,1];
+    const translate = (x: number, y: number, z: number) => [
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      x,
+      y,
+      z,
+      1,
+    ];
 
     let raf = 0;
     let t = 0;
