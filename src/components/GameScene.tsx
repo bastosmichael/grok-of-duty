@@ -5,7 +5,7 @@ import { createWorld } from "@/game/world";
 import { createPlayer } from "@/game/player";
 import { createCombat } from "@/game/combat";
 import { createAudio } from "@/game/audio";
-import { GameHUD, LoadingScreen } from "@/game/ui";
+import { GameHUD, LoadingScreen, TouchControls } from "@/game/ui";
 import { DEFAULT_HUD, type GameHudState, type KillFeedEntry } from "@/game/types";
 
 interface Props {
@@ -131,6 +131,7 @@ export default function GameScene({ onExit }: Props) {
         onEmpty: () => audio.playEmpty(),
       });
       playerRef.current = player;
+      player.setTouchMode(touchModeRef.current);
       disposers.push(() => player.dispose());
 
       // Spawn player slightly inside the compound
