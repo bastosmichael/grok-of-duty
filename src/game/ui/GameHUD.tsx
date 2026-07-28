@@ -433,8 +433,11 @@ export function GameHUD({ state, onExit, onEngage, touch = false }: GameHUDProps
 
       {/* Player vitals */}
       <section
-        className={`hud-motion absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] font-mono uppercase max-[430px]:bottom-[5.6rem] ${touch ? "scale-[.82] origin-bottom-left opacity-90 max-[820px]:bottom-[11.5rem]" : ""}`}
-        style={{ animation: "hud-enter .5s .12s ease-out both" }}
+        className={`hud-motion absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] font-mono uppercase ${touch ? "scale-[.8] origin-top-left opacity-90" : ""}`}
+        style={{
+          animation: "hud-enter .5s .12s ease-out both",
+          ...(touch ? { top: "5rem", bottom: "auto" } : null),
+        }}
         aria-label="Player status"
       >
         <div className="relative min-w-[clamp(12rem,23vw,18rem)] overflow-hidden border-l-2 border-white/70 bg-gradient-to-r from-black/78 via-black/52 to-transparent py-2 pl-3 pr-9 backdrop-blur-[2px] max-[430px]:min-w-44 max-[430px]:pr-4">
