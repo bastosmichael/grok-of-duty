@@ -20,7 +20,12 @@ export default function GameScene({ onExit }: Props) {
     scene.background = new THREE.Color(0x0a0f14);
     scene.fog = new THREE.Fog(0x0a0f14, 20, 90);
 
-    const camera = new THREE.PerspectiveCamera(75, mount.clientWidth / mount.clientHeight, 0.1, 500);
+    const camera = new THREE.PerspectiveCamera(
+      75,
+      mount.clientWidth / mount.clientHeight,
+      0.1,
+      500,
+    );
     camera.position.set(0, 1.7, 5);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -41,7 +46,7 @@ export default function GameScene({ onExit }: Props) {
     // Ground
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(200, 200, 40, 40),
-      new THREE.MeshStandardMaterial({ color: 0x1a1f26, roughness: 0.9, wireframe: false })
+      new THREE.MeshStandardMaterial({ color: 0x1a1f26, roughness: 0.9, wireframe: false }),
     );
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
@@ -59,11 +64,7 @@ export default function GameScene({ onExit }: Props) {
     for (let i = 0; i < 25; i++) {
       const size = 1 + Math.random() * 2;
       const crate = new THREE.Mesh(new THREE.BoxGeometry(size, size, size), crateMat);
-      crate.position.set(
-        (Math.random() - 0.5) * 80,
-        size / 2,
-        (Math.random() - 0.5) * 80
-      );
+      crate.position.set((Math.random() - 0.5) * 80, size / 2, (Math.random() - 0.5) * 80);
       crate.castShadow = true;
       crate.receiveShadow = true;
       scene.add(crate);
@@ -71,7 +72,11 @@ export default function GameScene({ onExit }: Props) {
     }
 
     // Enemy targets
-    const enemyMat = new THREE.MeshStandardMaterial({ color: 0xff4422, emissive: 0x661100, emissiveIntensity: 0.6 });
+    const enemyMat = new THREE.MeshStandardMaterial({
+      color: 0xff4422,
+      emissive: 0x661100,
+      emissiveIntensity: 0.6,
+    });
     const enemies: THREE.Mesh[] = [];
     const spawnEnemy = () => {
       const e = new THREE.Mesh(new THREE.CapsuleGeometry(0.4, 1.2, 4, 8), enemyMat.clone());
@@ -86,17 +91,17 @@ export default function GameScene({ onExit }: Props) {
     const weapon = new THREE.Group();
     const gunBody = new THREE.Mesh(
       new THREE.BoxGeometry(0.15, 0.15, 0.9),
-      new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.4, metalness: 0.7 })
+      new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.4, metalness: 0.7 }),
     );
     const gunBarrel = new THREE.Mesh(
       new THREE.CylinderGeometry(0.04, 0.04, 0.5, 8),
-      new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.9, roughness: 0.3 })
+      new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.9, roughness: 0.3 }),
     );
     gunBarrel.rotation.x = Math.PI / 2;
     gunBarrel.position.z = -0.6;
     const gunGrip = new THREE.Mesh(
       new THREE.BoxGeometry(0.12, 0.25, 0.15),
-      new THREE.MeshStandardMaterial({ color: 0x2a1a0a })
+      new THREE.MeshStandardMaterial({ color: 0x2a1a0a }),
     );
     gunGrip.position.set(0, -0.18, 0.15);
     weapon.add(gunBody, gunBarrel, gunGrip);
@@ -134,7 +139,9 @@ export default function GameScene({ onExit }: Props) {
         document.exitPointerLock?.();
       }
     };
-    const onKeyUp = (e: KeyboardEvent) => { keys[e.code] = false; };
+    const onKeyUp = (e: KeyboardEvent) => {
+      keys[e.code] = false;
+    };
     document.addEventListener("keydown", onKeyDown);
     document.addEventListener("keyup", onKeyUp);
 
@@ -293,7 +300,10 @@ export default function GameScene({ onExit }: Props) {
             <div className="text-[10px] text-muted-foreground">HP</div>
           </div>
           <div className="border-r-2 border-primary pr-2 text-right text-primary">
-            <div className="text-3xl font-black font-[Orbitron]">{ammo}<span className="text-muted-foreground text-lg">/30</span></div>
+            <div className="text-3xl font-black font-[Orbitron]">
+              {ammo}
+              <span className="text-muted-foreground text-lg">/30</span>
+            </div>
             <div className="text-[10px] text-muted-foreground">[R] RELOAD</div>
           </div>
         </div>
@@ -311,15 +321,29 @@ export default function GameScene({ onExit }: Props) {
       {ready && !locked && (
         <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-background/70 backdrop-blur-sm">
           <div className="pointer-events-auto max-w-md border border-primary/60 bg-card p-8 text-center">
-            <div className="text-xs font-mono uppercase tracking-[0.3em] text-primary">// BRIEFING</div>
+            <div className="text-xs font-mono uppercase tracking-[0.3em] text-primary">
+              // BRIEFING
+            </div>
             <h3 className="mt-3 font-[Orbitron] text-3xl font-black uppercase">Ready Up</h3>
             <div className="mt-6 grid grid-cols-2 gap-3 text-xs font-mono uppercase text-left text-muted-foreground">
-              <div><span className="text-primary">WASD</span> Move</div>
-              <div><span className="text-primary">MOUSE</span> Aim</div>
-              <div><span className="text-primary">CLICK</span> Fire</div>
-              <div><span className="text-primary">R</span> Reload</div>
-              <div><span className="text-primary">ESC</span> Release</div>
-              <div><span className="text-primary">EXFIL</span> Quit</div>
+              <div>
+                <span className="text-primary">WASD</span> Move
+              </div>
+              <div>
+                <span className="text-primary">MOUSE</span> Aim
+              </div>
+              <div>
+                <span className="text-primary">CLICK</span> Fire
+              </div>
+              <div>
+                <span className="text-primary">R</span> Reload
+              </div>
+              <div>
+                <span className="text-primary">ESC</span> Release
+              </div>
+              <div>
+                <span className="text-primary">EXFIL</span> Quit
+              </div>
             </div>
             <div className="mt-6 flex flex-col gap-3">
               <button
@@ -328,10 +352,7 @@ export default function GameScene({ onExit }: Props) {
               >
                 ▶ Engage
               </button>
-              <button
-                onClick={onExit}
-                className="btn-tactical-destructive w-full"
-              >
+              <button onClick={onExit} className="btn-tactical-destructive w-full">
                 ✕ Quit
               </button>
             </div>
