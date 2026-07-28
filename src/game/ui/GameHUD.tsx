@@ -433,7 +433,7 @@ export function GameHUD({ state, onExit, onEngage, touch = false }: GameHUDProps
 
       {/* Player vitals */}
       <section
-        className="hud-motion absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] font-mono uppercase max-[430px]:bottom-[5.6rem]"
+        className={`hud-motion absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] font-mono uppercase max-[430px]:bottom-[5.6rem] ${touch ? "scale-[.82] origin-bottom-left opacity-90 max-[820px]:bottom-[11.5rem]" : ""}`}
         style={{ animation: "hud-enter .5s .12s ease-out both" }}
         aria-label="Player status"
       >
@@ -473,7 +473,7 @@ export function GameHUD({ state, onExit, onEngage, touch = false }: GameHUDProps
 
       {/* Weapon telemetry */}
       <section
-        className="hud-motion absolute bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] text-right font-mono uppercase"
+        className={`hud-motion absolute bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] text-right font-mono uppercase ${touch ? "scale-[.82] origin-bottom-right opacity-90 max-[820px]:bottom-[11.5rem]" : ""}`}
         style={{ animation: "hud-enter .5s .18s ease-out both" }}
         aria-label="Weapon status"
       >
@@ -573,7 +573,9 @@ export function GameHUD({ state, onExit, onEngage, touch = false }: GameHUDProps
                   <span aria-hidden="true">▶</span>
                 </button>
                 <p className="mt-2 text-center font-mono text-[9px] uppercase tracking-[.12em] text-white/50">
-                  Click to capture cursor · Headphones recommended
+                  {touch
+                    ? "Tap to deploy · On-screen controls · Headphones recommended"
+                    : "Click to capture cursor · Headphones recommended"}
                 </p>
               </div>
 
