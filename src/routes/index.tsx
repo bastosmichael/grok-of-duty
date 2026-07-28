@@ -10,12 +10,6 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
-const stats = [
-  { label: "Operators", value: "12K+" },
-  { label: "Matches Today", value: "3,481" },
-  { label: "Avg. Ping", value: "42ms" },
-  { label: "Servers Online", value: "27/27" },
-];
 
 const roadmap = [
   {
