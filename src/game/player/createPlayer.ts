@@ -202,12 +202,77 @@ export function createPlayer(opts: {
   };
 
   const tryRequestLock = (): void => {
+    if (touchMode) {
+      touchActive = true;
+      locked = true;
+      pushHud({ locked: true });
+      return;
+    }
     try {
       void canvas.requestPointerLock().catch(onPointerLockError);
     } catch {
       onPointerLockError();
     }
   };
+
+  const resetInput = (): void => {
+    fireHeld = false;
+    adsHeld = false;
+    mouseDx = 0;
+    mouseDy = 0;
+    touchMoveX = 0;
+    touchMoveY = 0;
+    touchLookDx = 0;
+    touchLookDy = 0;
+    touchSprint = false;
+    touchCrouch = false;
+    for (const code of Object.keys(keys)) keys[code] = false;
+  };
+
+  const releaseTouch = (): void => {
+    touchActive = false;
+    locked = false;
+    resetInput();
+    pushHud({ locked: false, ads: false, sprinting: false });
+  };
+
+  const setTouchMode = (enabled: boolean): void => {
+    touchMode = enabled;
+    if (!enabled) touchActive = false;
+  };
+
+  const touchApi = {
+    move: (x: number, y: number): void => {
+      touchMoveX = x;
+      touchMoveY = y;
+    },
+    look: (dx: number, dy: number): void => {
+      touchLookDx += dx;
+      touchLookDy += dy;
+    },
+    setFire: (down: boolean): void => {
+      fireHeld = down;
+    },
+    setAds: (down: boolean): void => {
+      adsHeld = down;
+    },
+    setSprint: (down: boolean): void => {
+      touchSprint = down;
+    },
+    toggleCrouch: (): void => {
+      touchCrouch = !touchCrouch;
+    },
+    jump: (): void => {
+      if (locked) jumpBufferT = JUMP_BUFFER;
+    },
+    reload: (): void => {
+      if (locked && weapon.reload()) {
+        onReloadStart?.();
+        syncWeaponHud();
+      }
+    },
+  };
+
 
   const onMouseDown = (e: MouseEvent): void => {
     if (document.pointerLockElement !== canvas) {
