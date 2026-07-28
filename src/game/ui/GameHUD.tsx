@@ -513,7 +513,16 @@ export function GameHUD({ state, onExit, onEngage, touch = false }: GameHUDProps
             }`}
             aria-live="polite"
           >
-            {reloading ? "MAGAZINE CHANGE" : lowAmmo ? "LOW AMMUNITION · R" : "R · RELOAD"}
+            {reloading
+              ? "MAGAZINE CHANGE"
+              : lowAmmo
+                ? touch
+                  ? "LOW AMMUNITION · TAP R"
+                  : "LOW AMMUNITION · R"
+                : touch
+                  ? "TAP R · RELOAD"
+                  : "R · RELOAD"}
+
           </div>
         </div>
       </section>
