@@ -16,7 +16,6 @@ export const AD_SLOTS = {
 
 const GOOGLE_SERVICE_HOSTS = new Set(["michaelbastos.com", "www.michaelbastos.com"]);
 
-
 type GoogleEventParameters = Record<string, boolean | number | string>;
 type GoogleTag = (
   command: "config" | "event" | "js",

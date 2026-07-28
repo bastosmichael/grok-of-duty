@@ -21,7 +21,12 @@ declare global {
  * Height is reserved up-front to avoid layout shift, and the unit only mounts
  * on the production hostname so dev/preview stay ad-free.
  */
-export default function AdSlot({ slot, label = "// SPONSORED", minHeight = 280, className = "" }: AdSlotProps) {
+export default function AdSlot({
+  slot,
+  label = "// SPONSORED",
+  minHeight = 280,
+  className = "",
+}: AdSlotProps) {
   const pushed = useRef(false);
 
   const active =

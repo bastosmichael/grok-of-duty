@@ -8,7 +8,6 @@ import { AD_SLOTS } from "@/lib/google-services";
 const WebGLCube = lazy(() => import("@/components/WebGLCube"));
 const GameScene = lazy(() => import("@/components/GameScene"));
 
-
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
@@ -111,7 +110,6 @@ function Index() {
     document.body.classList.toggle("game-active", gameOpen);
     return () => document.body.classList.remove("game-active");
   }, [gameOpen]);
-
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -264,8 +262,6 @@ function Index() {
         </div>
       )}
 
-
-
       {/* ROADMAP */}
       <section id="roadmap" className="relative border-t border-border bg-card/30 py-16 sm:py-24">
         <div className="absolute inset-0 grid-lines opacity-20 pointer-events-none" />
@@ -350,8 +346,6 @@ function Index() {
           <AdSlot slot={AD_SLOTS.preFooter} label="// SPONSORED · 02" minHeight={250} />
         </div>
       )}
-
-
 
       {/* FOOTER */}
       <footer className="border-t border-border bg-background py-10">
