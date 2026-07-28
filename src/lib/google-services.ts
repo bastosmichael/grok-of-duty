@@ -1,6 +1,19 @@
 export const GOOGLE_ANALYTICS_ID = "G-QFWCR1XG0X";
 export const GOOGLE_ADSENSE_CLIENT = "ca-pub-4228490019228264";
 
+/**
+ * The only two ad placements allowed on the landing page. Paste the ad unit IDs
+ * from AdSense (Ads → By ad unit → the 10-digit `data-ad-slot` value). Empty
+ * strings keep the placement unrendered, so the page stays clean until real
+ * units exist. Auto Ads must be excluded for this URL in the AdSense dashboard.
+ */
+export const AD_SLOTS = {
+  /** Between the Arsenal (features) grid and the Roadmap section. */
+  midPage: "",
+  /** Between the Ops CTA and the footer. */
+  preFooter: "",
+} as const;
+
 const GOOGLE_SERVICE_HOSTS = new Set(["michaelbastos.com", "www.michaelbastos.com"]);
 
 type GoogleEventParameters = Record<string, boolean | number | string>;
