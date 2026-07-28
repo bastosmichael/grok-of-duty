@@ -205,7 +205,7 @@ function Key({ children }: { children: string }) {
   );
 }
 
-export function GameHUD({ state, onExit, onEngage }: GameHUDProps) {
+export function GameHUD({ state, onExit, onEngage, touch = false }: GameHUDProps) {
   const {
     health,
     maxHealth,
@@ -419,14 +419,17 @@ export function GameHUD({ state, onExit, onEngage }: GameHUDProps) {
         </div>
       </aside>
 
-      <button
-        type="button"
-        onClick={onExit}
-        className="pointer-events-auto absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 z-10 hidden -translate-x-1/2 border border-white/15 bg-black/45 px-3 py-1 font-mono text-[8px] uppercase tracking-[.2em] text-white/45 backdrop-blur transition hover:border-primary/70 hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary sm:block"
-        aria-label="Exit combat"
-      >
-        ESC · RELEASE CURSOR
-      </button>
+      {!touch && (
+        <button
+          type="button"
+          onClick={onExit}
+          className="pointer-events-auto absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 z-10 hidden -translate-x-1/2 border border-white/15 bg-black/45 px-3 py-1 font-mono text-[8px] uppercase tracking-[.2em] text-white/45 backdrop-blur transition hover:border-primary/70 hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary sm:block"
+          aria-label="Exit combat"
+        >
+          ESC · RELEASE CURSOR
+        </button>
+      )}
+
 
       {/* Player vitals */}
       <section
