@@ -1,6 +1,23 @@
 import * as THREE from "three";
 import type { Collider, Enemy } from "@/game/types";
 import { raycastColliders } from "@/game/player/physics";
+import {
+  createEnemyModel,
+  poseEnemyDeath,
+  poseEnemyModel,
+  resetEnemyModelPose,
+  setEnemyModelOwner,
+  type EnemyModel,
+} from "./enemyModel";
+import {
+  clampEnemyImpulse,
+  dampEnemyYaw,
+  ENEMY_BODY,
+  findEnemySpawn,
+  moveEnemyGrounded,
+  separateEnemyBodies,
+  type GroundedBody,
+} from "./enemyPhysics";
 
 const SEEK_RANGE = 48;
 const MELEE_RANGE = 1.8;
@@ -13,20 +30,20 @@ const FIRE_COOLDOWN = 1.05;
 const DEFAULT_HP = 85;
 const DEFAULT_SPEED = 3.55;
 const SPAWN_COUNT = 10;
-const DEATH_SINK_DURATION = 0.75;
+const DEATH_SETTLE_DURATION = 0.72;
+const DEATH_HOLD_DURATION = 0.78;
 const RESPAWN_DELAY = 2.1;
 const PLAYER_SPAWN_CLEAR = 12;
-const MAP_HALF = 55;
+const MAX_KNOCK_SPEED = 4.4;
 
 const _toPlayer = new THREE.Vector3();
 const _strafe = new THREE.Vector3();
 const _knock = new THREE.Vector3();
-const _look = new THREE.Vector3();
 const _flashWhite = new THREE.Color(0xffffff);
 const _fromPos = new THREE.Vector3();
 const _shotEnd = new THREE.Vector3();
 const _shotDir = new THREE.Vector3();
-const _candidate = new THREE.Vector3();
+const _motion = new THREE.Vector3();
 const _separation = new THREE.Vector3();
 
 export type EnemySystemOpts = {
@@ -69,7 +86,6 @@ type EnemyRuntime = Enemy & {
   collapsing: boolean;
   strafePhase: number;
   behavior: number; // 0 rush, 1 circle, 2 pause-burst
-  baseY: number;
   bodyParts: THREE.Mesh[];
   headMesh: THREE.Mesh;
   materials: THREE.MeshStandardMaterial[];
@@ -80,267 +96,42 @@ type EnemyRuntime = Enemy & {
   knockVelocity: THREE.Vector3;
   staggerTimer: number;
   moveBlend: number;
+  physicsBody: GroundedBody;
+  model: EnemyModel;
+  gaitPhase: number;
+  flinchYaw: number;
+  recoil: number;
+  deathSide: -1 | 1;
 };
 
 let nextEnemyId = 1;
-let sharedGeo: {
-  torso: THREE.BoxGeometry;
-  head: THREE.BoxGeometry;
-  limb: THREE.BoxGeometry;
-  leg: THREE.BoxGeometry;
-  visor: THREE.BoxGeometry;
-  shoulder: THREE.BoxGeometry;
-  plate: THREE.BoxGeometry;
-  pouch: THREE.BoxGeometry;
-  boot: THREE.BoxGeometry;
-  weapon: THREE.BoxGeometry;
-  barrel: THREE.CylinderGeometry;
-} | null = null;
-
-function getSharedGeo() {
-  if (!sharedGeo) {
-    sharedGeo = {
-      torso: new THREE.BoxGeometry(0.5, 0.68, 0.28),
-      head: new THREE.BoxGeometry(0.3, 0.3, 0.32),
-      limb: new THREE.BoxGeometry(0.14, 0.52, 0.14),
-      leg: new THREE.BoxGeometry(0.16, 0.58, 0.18),
-      visor: new THREE.BoxGeometry(0.28, 0.055, 0.05),
-      shoulder: new THREE.BoxGeometry(0.58, 0.12, 0.26),
-      plate: new THREE.BoxGeometry(0.42, 0.4, 0.08),
-      pouch: new THREE.BoxGeometry(0.1, 0.1, 0.08),
-      boot: new THREE.BoxGeometry(0.18, 0.1, 0.28),
-      weapon: new THREE.BoxGeometry(0.06, 0.08, 0.42),
-      barrel: new THREE.CylinderGeometry(0.015, 0.015, 0.28, 6),
-    };
-  }
-  return sharedGeo;
-}
-
-function mat(
-  color: number,
-  opts: {
-    roughness?: number;
-    metalness?: number;
-    emissive?: number;
-    emissiveIntensity?: number;
-  } = {},
-): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({
-    color,
-    roughness: opts.roughness ?? 0.78,
-    metalness: opts.metalness ?? 0.22,
-    emissive: opts.emissive ?? 0x000000,
-    emissiveIntensity: opts.emissiveIntensity ?? 0,
-  });
-}
-
-/**
- * Hostile operator silhouette:
- * - Dark plate carrier + red team accent stripes
- * - Glowing visor for night readability
- * - Shoulder pads, pouches, boots, held rifle
- */
-function buildOperatorMesh(variant: number): {
-  group: THREE.Group;
-  bodyParts: THREE.Mesh[];
-  headMesh: THREE.Mesh;
-  materials: THREE.MeshStandardMaterial[];
-  teamHue: number;
-} {
-  const geo = getSharedGeo();
-  const group = new THREE.Group();
-  group.name = "enemy_operator";
-
-  // Team color: hostile red/orange family with slight variant — punchy for range ID
-  const accentHex = variant % 3 === 0 ? 0xff2e1a : variant % 3 === 1 ? 0xff4818 : 0xe02420;
-  const gearDark = mat(0x1a1e26, {
-    roughness: 0.78,
-    metalness: 0.28,
-    emissive: 0x080a10,
-    emissiveIntensity: 0.12,
-  });
-  const gearMid = mat(0x2a323c, {
-    roughness: 0.62,
-    metalness: 0.35,
-    emissive: 0x0a0e14,
-    emissiveIntensity: 0.1,
-  });
-  // Team accents stay lit at range (COD enemy ID without HUD markers)
-  const gearAccent = mat(accentHex, {
-    roughness: 0.4,
-    metalness: 0.45,
-    emissive: accentHex,
-    emissiveIntensity: 1.15,
-  });
-  const helmet = mat(0x161a20, {
-    roughness: 0.42,
-    metalness: 0.62,
-    emissive: 0x0a1018,
-    emissiveIntensity: 0.1,
-  });
-  // Visor — primary silhouette cue; sits well above bloom threshold
-  const visorMat = mat(accentHex, {
-    roughness: 0.12,
-    metalness: 0.95,
-    emissive: accentHex,
-    emissiveIntensity: 2.8,
-  });
-  const cloth = mat(0x242820, {
-    roughness: 0.85,
-    metalness: 0.08,
-    emissive: 0x080a06,
-    emissiveIntensity: 0.08,
-  });
-  const bootMat = mat(0x121416, { roughness: 0.8, metalness: 0.2 });
-
-  const materials = [gearDark, gearMid, gearAccent, helmet, visorMat, cloth, bootMat];
-  const bodyParts: THREE.Mesh[] = [];
-
-  const add = (
-    geometry: THREE.BufferGeometry,
-    material: THREE.MeshStandardMaterial,
-    x: number,
-    y: number,
-    z: number,
-    sx = 1,
-    sy = 1,
-    sz = 1,
-    rotX = 0,
-    rotY = 0,
-    rotZ = 0,
-  ): THREE.Mesh => {
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.set(x, y, z);
-    mesh.scale.set(sx, sy, sz);
-    mesh.rotation.set(rotX, rotY, rotZ);
-    const majorSilhouette =
-      geometry === geo.torso ||
-      geometry === geo.head ||
-      geometry === geo.limb ||
-      geometry === geo.leg ||
-      geometry === geo.shoulder ||
-      geometry === geo.weapon;
-    mesh.castShadow = majorSilhouette;
-    mesh.receiveShadow = majorSilhouette;
-    mesh.updateMatrix();
-    mesh.matrixAutoUpdate = false;
-    group.add(mesh);
-    // Keep hit registration generous on the actual silhouette without
-    // ray-testing every pouch, rail, and decorative nub on every shot.
-    if (
-      majorSilhouette ||
-      geometry === geo.visor ||
-      geometry === geo.barrel ||
-      geometry === geo.boot
-    ) {
-      bodyParts.push(mesh);
-    }
-    return mesh;
-  };
-
-  // Boots
-  add(geo.boot, bootMat, -0.13, 0.05, 0.04);
-  add(geo.boot, bootMat, 0.13, 0.05, 0.04);
-  // Legs
-  add(geo.leg, cloth, -0.13, 0.38, 0);
-  add(geo.leg, cloth, 0.13, 0.38, 0);
-  // Knee pads
-  add(geo.pouch, gearDark, -0.13, 0.42, 0.1, 1.1, 0.7, 0.6);
-  add(geo.pouch, gearDark, 0.13, 0.42, 0.1, 1.1, 0.7, 0.6);
-  // Hip / belt
-  add(geo.shoulder, gearDark, 0, 0.72, 0, 0.9, 0.65, 0.95);
-  // Mag pouches on belt
-  add(geo.pouch, gearAccent, -0.18, 0.78, 0.14, 0.9, 0.9, 1);
-  add(geo.pouch, gearAccent, 0, 0.78, 0.14, 0.9, 0.9, 1);
-  add(geo.pouch, gearAccent, 0.18, 0.78, 0.14, 0.9, 0.9, 1);
-  // Torso
-  add(geo.torso, gearMid, 0, 1.14, 0);
-  // Plate carrier front (raised)
-  add(geo.plate, gearDark, 0, 1.18, 0.14, 1, 1, 1);
-  // Team stripe on plate
-  add(geo.pouch, gearAccent, 0, 1.22, 0.19, 2.2, 0.35, 0.4);
-  // Shoulder pads
-  add(geo.shoulder, gearDark, 0, 1.46, 0, 1.05, 0.9, 1);
-  // Team armband L
-  add(geo.pouch, gearAccent, -0.42, 1.2, 0, 0.5, 0.55, 1.1);
-  // Arms
-  add(geo.limb, gearDark, -0.38, 1.12, 0, 1, 1, 1);
-  add(geo.limb, gearDark, 0.38, 1.12, 0.05, 1, 1, 1, -0.35, 0, 0);
-  // Held rifle (right side, forward)
-  const rifle = add(geo.weapon, gearDark, 0.28, 1.05, 0.22, 1, 1, 1, 0.1, 0.15, 0);
-  rifle.userData.isWeapon = true;
-  const barrel = add(geo.barrel, gearMid, 0.28, 1.08, 0.48, 1, 1, 1, Math.PI / 2, 0, 0);
-  barrel.userData.isWeapon = true;
-  // Head / helmet
-  const headMesh = add(geo.head, helmet, 0, 1.72, 0.02);
-  headMesh.userData.isHead = true;
-  // Helmet ridge
-  add(geo.pouch, gearDark, 0, 1.88, 0, 2.2, 0.35, 1.6);
-  // Soft emissive visor strip (hostile team color) — primary long-range ID
-  const visor = add(geo.visor, visorMat, 0, 1.74, 0.16);
-  visor.userData.isHead = true;
-  visor.userData.isVisor = true;
-  // Secondary visor glow slab slightly larger (reads at distance)
-  const visorGlow = add(geo.visor, visorMat, 0, 1.74, 0.18, 1.15, 1.35, 0.6);
-  visorGlow.userData.isHead = true;
-  visorGlow.userData.isVisor = true;
-  // Headset mic boom
-  add(geo.pouch, gearMid, 0.16, 1.7, 0.05, 0.4, 0.35, 1.2);
-
-  // Aggressive forward lean
-  group.rotation.x = 0.04;
-
-  return { group, bodyParts, headMesh, materials, teamHue: accentHex };
-}
-
-function canEnemyOccupy(position: THREE.Vector3, colliders: Collider[]): boolean {
-  const radius = 0.42;
-  for (const c of colliders) {
-    // Ignore ground/floor volumes the operator is intended to stand on.
-    if (c.max.y <= 0.12 || c.min.y >= 1.9) continue;
-    if (
-      position.x + radius > c.min.x &&
-      position.x - radius < c.max.x &&
-      position.z + radius > c.min.z &&
-      position.z - radius < c.max.z
-    ) {
-      return false;
-    }
-  }
-  return true;
-}
 
 function randomSpawnPosition(
   playerSpawn: THREE.Vector3,
   out: THREE.Vector3,
-  colliders: Collider[],
+  colliders: readonly Collider[],
+  occupied: readonly THREE.Vector3[],
 ): THREE.Vector3 {
-  for (let attempt = 0; attempt < 40; attempt++) {
-    const x = (Math.random() - 0.5) * 2 * MAP_HALF;
-    const z = (Math.random() - 0.5) * 2 * MAP_HALF;
-    const dx = x - playerSpawn.x;
-    const dz = z - playerSpawn.z;
-    if (dx * dx + dz * dz >= PLAYER_SPAWN_CLEAR * PLAYER_SPAWN_CLEAR) {
-      out.set(x, 0, z);
-      if (canEnemyOccupy(out, colliders)) return out;
-    }
-  }
-  return out.set(MAP_HALF * 0.7, 0, MAP_HALF * 0.7);
+  return findEnemySpawn(playerSpawn, out, colliders, occupied, PLAYER_SPAWN_CLEAR);
 }
 
 function createEnemyRuntime(
   scene: THREE.Scene,
   playerSpawn: THREE.Vector3,
   colliders: Collider[],
+  occupied: readonly THREE.Vector3[],
 ): EnemyRuntime {
   const variant = nextEnemyId;
-  const { group, bodyParts, headMesh, materials, teamHue } = buildOperatorMesh(variant);
-  const pos = randomSpawnPosition(playerSpawn, new THREE.Vector3(), colliders);
+  const model = createEnemyModel(variant);
+  const { root: group, bodyParts, headMesh, materials, teamHue } = model;
+  const pos = randomSpawnPosition(playerSpawn, new THREE.Vector3(), colliders, occupied);
   group.position.copy(pos);
+  group.rotation.set(0, Math.random() * Math.PI * 2, 0);
 
   const savedColors = materials.map((m) => m.color.clone());
   const savedEmissive = materials.map((m) => m.emissive.clone());
   const savedEmissiveIntensity = materials.map((m) => m.emissiveIntensity);
+  const id = nextEnemyId++;
 
   const enemy: EnemyRuntime = {
     mesh: group,
@@ -350,13 +141,12 @@ function createEnemyRuntime(
     alive: true,
     hitFlash: 0,
     attackCooldown: Math.random() * 0.5,
-    id: nextEnemyId++,
+    id,
     deathTimer: 0,
     respawnTimer: 0,
     collapsing: false,
     strafePhase: Math.random() * Math.PI * 2,
     behavior: Math.floor(Math.random() * 3),
-    baseY: 0,
     bodyParts,
     headMesh,
     materials,
@@ -367,12 +157,15 @@ function createEnemyRuntime(
     knockVelocity: new THREE.Vector3(),
     staggerTimer: 0,
     moveBlend: 0,
+    physicsBody: { id, position: group.position },
+    model,
+    gaitPhase: Math.random() * Math.PI * 2,
+    flinchYaw: 0,
+    recoil: 0,
+    deathSide: Math.random() < 0.5 ? -1 : 1,
   };
 
-  group.userData.enemyId = enemy.id;
-  for (const part of bodyParts) {
-    part.userData.enemyId = enemy.id;
-  }
+  setEnemyModelOwner(model, enemy.id);
 
   scene.add(group);
   return enemy;
@@ -396,7 +189,12 @@ function applyHitFlashVisual(e: EnemyRuntime, t: number): void {
   }
 }
 
-function respawnEnemy(e: EnemyRuntime, playerSpawn: THREE.Vector3, colliders: Collider[]): void {
+function respawnEnemy(
+  e: EnemyRuntime,
+  playerPosition: THREE.Vector3,
+  colliders: Collider[],
+  occupied: readonly THREE.Vector3[],
+): void {
   e.alive = true;
   e.collapsing = false;
   e.hp = e.maxHp;
@@ -406,14 +204,19 @@ function respawnEnemy(e: EnemyRuntime, playerSpawn: THREE.Vector3, colliders: Co
   e.attackCooldown = 0.35;
   e.staggerTimer = 0;
   e.moveBlend = 0;
+  e.gaitPhase = Math.random() * Math.PI * 2;
+  e.flinchYaw = 0;
+  e.recoil = 0;
+  e.deathSide = Math.random() < 0.5 ? -1 : 1;
   e.knockVelocity.set(0, 0, 0);
   e.strafePhase = Math.random() * Math.PI * 2;
   e.behavior = Math.floor(Math.random() * 3);
-  e.mesh.rotation.set(0.04, Math.random() * Math.PI * 2, 0);
+  e.mesh.rotation.set(0, Math.random() * Math.PI * 2, 0);
   e.mesh.scale.set(1, 1, 1);
   e.mesh.visible = true;
-  randomSpawnPosition(playerSpawn, e.mesh.position, colliders);
-  e.mesh.position.y = e.baseY;
+  randomSpawnPosition(playerPosition, e.mesh.position, colliders, occupied);
+  e.mesh.position.y = ENEMY_BODY.groundY;
+  resetEnemyModelPose(e.model.rig);
   restoreMaterials(e);
 }
 
@@ -429,28 +232,36 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
   const byId = new Map<number, EnemyRuntime>();
 
   for (let i = 0; i < count; i++) {
-    const e = createEnemyRuntime(scene, playerSpawn, colliders);
+    const occupied = enemies.map((enemy) => enemy.mesh.position);
+    const e = createEnemyRuntime(scene, playerSpawn, colliders, occupied);
     enemies.push(e);
     byId.set(e.id, e);
   }
 
   const raycastList: THREE.Object3D[] = [];
+  const activeBodies: GroundedBody[] = [];
+  const occupiedPositions: THREE.Vector3[] = [];
   let combatTime = 0;
 
   const update = (dt: number, playerPos: THREE.Vector3): void => {
-    const safeDt = Math.min(dt, 0.05);
+    const safeDt = THREE.MathUtils.clamp(dt, 0, 0.05);
     combatTime += safeDt;
 
     for (const e of enemies) {
       if (!e.alive) {
         if (e.collapsing) {
           e.deathTimer += safeDt;
-          const t = Math.min(1, e.deathTimer / DEATH_SINK_DURATION);
-          e.mesh.rotation.x = THREE.MathUtils.lerp(0.04, Math.PI / 2.1, t);
-          e.mesh.rotation.z = THREE.MathUtils.lerp(0, 0.4, t);
-          e.mesh.position.y = e.baseY - t * 0.9;
-          e.mesh.scale.y = 1 - t * 0.18;
-          if (e.deathTimer >= DEATH_SINK_DURATION) {
+          const t = Math.min(1, e.deathTimer / DEATH_SETTLE_DURATION);
+
+          // A contact-corrected articulated collapse settles knees and torso
+          // while the physical root remains a strict ground support point.
+          poseEnemyDeath(e.model.rig, t, e.deathSide);
+          e.mesh.rotation.x = 0;
+          e.mesh.rotation.z = 0;
+          e.mesh.position.y = ENEMY_BODY.groundY;
+          e.mesh.scale.set(1, 1, 1);
+
+          if (e.deathTimer >= DEATH_SETTLE_DURATION + DEATH_HOLD_DURATION) {
             e.collapsing = false;
             e.mesh.visible = false;
             e.respawnTimer = RESPAWN_DELAY;
@@ -458,11 +269,20 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
         } else if (e.respawnTimer > 0) {
           e.respawnTimer -= safeDt;
           if (e.respawnTimer <= 0) {
-            respawnEnemy(e, playerSpawn, colliders);
+            occupiedPositions.length = 0;
+            for (const other of enemies) {
+              if (other !== e && other.alive) occupiedPositions.push(other.mesh.position);
+            }
+            // Respawns clear the player's current location, not merely the
+            // original insertion point.
+            respawnEnemy(e, playerPos, colliders, occupiedPositions);
           }
         }
         continue;
       }
+
+      const frameStartX = e.mesh.position.x;
+      const frameStartZ = e.mesh.position.z;
 
       // Hit flash decay
       if (e.hitFlash > 0) {
@@ -473,10 +293,8 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
       e.staggerTimer = Math.max(0, e.staggerTimer - safeDt);
 
       if (e.knockVelocity.lengthSq() > 0.0004) {
-        _candidate.copy(e.mesh.position).addScaledVector(e.knockVelocity, safeDt);
-        if (canEnemyOccupy(_candidate, colliders)) {
-          e.mesh.position.copy(_candidate);
-        }
+        _motion.copy(e.knockVelocity).multiplyScalar(safeDt);
+        moveEnemyGrounded(e.mesh.position, _motion, colliders);
         e.knockVelocity.multiplyScalar(Math.exp(-9 * safeDt));
       } else {
         e.knockVelocity.set(0, 0, 0);
@@ -529,24 +347,41 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
           (_toPlayer.x * approach + _strafe.x * strafeAmt + _separation.x * 0.8) * moveSpeed;
         const moveZ =
           (_toPlayer.z * approach + _strafe.z * strafeAmt + _separation.z * 0.8) * moveSpeed;
-        _candidate.copy(e.mesh.position);
-        _candidate.x += moveX;
-        if (canEnemyOccupy(_candidate, colliders)) e.mesh.position.x = _candidate.x;
-        _candidate.copy(e.mesh.position);
-        _candidate.z += moveZ;
-        if (canEnemyOccupy(_candidate, colliders)) e.mesh.position.z = _candidate.z;
-        e.mesh.position.x = THREE.MathUtils.clamp(e.mesh.position.x, -MAP_HALF, MAP_HALF);
-        e.mesh.position.z = THREE.MathUtils.clamp(e.mesh.position.z, -MAP_HALF, MAP_HALF);
+        _motion.set(moveX, 0, moveZ);
+        moveEnemyGrounded(e.mesh.position, _motion, colliders);
 
-        const moving = Math.abs(moveX) + Math.abs(moveZ) > 0.002;
-        e.moveBlend = THREE.MathUtils.damp(e.moveBlend, moving ? 1 : 0, 8, safeDt);
-        // Restrained gear-weighted run cycle.
-        e.mesh.position.y = e.baseY + Math.abs(Math.sin(e.strafePhase * 2.2)) * 0.045 * e.moveBlend;
-
-        _look.set(playerPos.x, e.mesh.position.y + 1.25, playerPos.z);
-        e.mesh.lookAt(_look);
-        e.mesh.rotation.x = 0.04;
+        const targetYaw = Math.atan2(_toPlayer.x, _toPlayer.z);
+        const yaw = dampEnemyYaw(e.mesh.rotation.y, targetYaw, 11, safeDt);
+        e.mesh.rotation.set(0, yaw, 0);
       }
+
+      // A living operator's root is a physical support point, not animation
+      // data. Locomotion rigs may animate children, but the boots never hover
+      // or penetrate because the root remains exactly on the ground plane.
+      e.mesh.position.y = ENEMY_BODY.groundY;
+      e.mesh.rotation.x = 0;
+      e.mesh.rotation.z = 0;
+      e.mesh.scale.set(1, 1, 1);
+
+      const frameTravel = Math.hypot(
+        e.mesh.position.x - frameStartX,
+        e.mesh.position.z - frameStartZ,
+      );
+      e.gaitPhase += frameTravel * 6.2;
+      const locomotionTarget =
+        safeDt > 0
+          ? THREE.MathUtils.clamp(frameTravel / Math.max(e.speed * safeDt * 0.72, 0.001), 0, 1)
+          : 0;
+      e.moveBlend = THREE.MathUtils.damp(e.moveBlend, locomotionTarget, 10, safeDt);
+      e.recoil = Math.max(0, e.recoil - safeDt * 8.5);
+      poseEnemyModel(e.model.rig, {
+        gaitPhase: e.gaitPhase,
+        locomotion: e.moveBlend,
+        aim: dist <= FIRE_MAX_RANGE ? 1 : dist < SEEK_RANGE ? 0.72 : 0.35,
+        recoil: e.recoil,
+        flinch: THREE.MathUtils.clamp(e.staggerTimer / 0.28, 0, 1),
+        flinchYaw: e.flinchYaw,
+      });
 
       // Close strike or paced rifle fire. Only a rotating subset of the squad
       // may fire at once so pressure stays intense without becoming unfair.
@@ -555,7 +390,17 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
         e.attackCooldown = MELEE_COOLDOWN + Math.random() * 0.22;
         _fromPos.copy(e.mesh.position);
         _fromPos.y += 1.2;
-        opts.onPlayerDamage(MELEE_DAMAGE, _fromPos);
+        _shotDir.set(playerPos.x, playerPos.y + 1.05, playerPos.z).sub(_fromPos);
+        const strikeDistance = _shotDir.length();
+        _shotDir.normalize();
+        const strikeCover = colliders.length
+          ? raycastColliders(_fromPos, _shotDir, colliders, strikeDistance)
+          : null;
+        // A wall blocks close strikes just as decisively as it blocks rifle
+        // fire; proximity alone is never sufficient line of sight.
+        if (!strikeCover || strikeCover.t >= strikeDistance - 0.12) {
+          opts.onPlayerDamage(MELEE_DAMAGE, _fromPos);
+        }
       } else if (
         dist >= FIRE_MIN_RANGE &&
         dist <= FIRE_MAX_RANGE &&
@@ -563,8 +408,7 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
         e.staggerTimer <= 0 &&
         (e.id + Math.floor(combatTime * 0.7)) % 3 === 0
       ) {
-        _fromPos.copy(e.mesh.position);
-        _fromPos.y += 1.18;
+        e.model.rig.muzzle.getWorldPosition(_fromPos);
         _shotDir.set(playerPos.x, playerPos.y + 1.22, playerPos.z).sub(_fromPos);
         const shotDistance = _shotDir.length();
         _shotDir.normalize();
@@ -573,6 +417,7 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
           : null;
 
         e.attackCooldown = FIRE_COOLDOWN + Math.random() * 0.55 + (e.behavior === 2 ? -0.12 : 0.12);
+        e.recoil = 1;
         if (coverHit && coverHit.t < shotDistance - 0.25) {
           opts.onEnemyShot?.(_fromPos, coverHit.point, false, coverHit.normal);
         } else {
@@ -590,6 +435,12 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
         }
       }
     }
+
+    activeBodies.length = 0;
+    for (const e of enemies) {
+      if (e.alive) activeBodies.push(e.physicsBody);
+    }
+    separateEnemyBodies(activeBodies, colliders);
   };
 
   const raycastTargets = (): THREE.Object3D[] => {
@@ -632,8 +483,18 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
     if (hitDir && hitDir.lengthSq() > 0) {
       _knock.copy(hitDir).setY(0);
       if (_knock.lengthSq() > 0) {
-        _knock.normalize().multiplyScalar(isHeadshot ? 4.8 : 3.2);
+        _knock.normalize();
+        const hitYaw = Math.atan2(_knock.x, _knock.z);
+        e.flinchYaw = Math.atan2(
+          Math.sin(hitYaw - e.mesh.rotation.y),
+          Math.cos(hitYaw - e.mesh.rotation.y),
+        );
+        if (Math.abs(Math.sin(e.flinchYaw)) > 0.08) {
+          e.deathSide = Math.sin(e.flinchYaw) >= 0 ? 1 : -1;
+        }
+        _knock.multiplyScalar(isHeadshot ? 4.8 : 3.2);
         e.knockVelocity.add(_knock);
+        clampEnemyImpulse(e.knockVelocity, MAX_KNOCK_SPEED);
       }
     }
     e.staggerTimer = isHeadshot ? 0.28 : 0.16;
@@ -644,6 +505,11 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
       e.collapsing = true;
       e.deathTimer = 0;
       e.hitFlash = 0;
+      e.knockVelocity.set(0, 0, 0);
+      e.mesh.position.y = ENEMY_BODY.groundY;
+      e.mesh.rotation.x = 0;
+      e.mesh.rotation.z = 0;
+      e.mesh.scale.set(1, 1, 1);
       restoreMaterials(e);
       for (const m of e.materials) {
         m.color.multiplyScalar(0.4);
@@ -657,25 +523,10 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
 
   const dispose = (): void => {
     for (const e of enemies) {
-      scene.remove(e.mesh);
-      for (const m of e.materials) m.dispose();
+      e.model.dispose();
     }
     enemies.length = 0;
     byId.clear();
-    if (sharedGeo) {
-      sharedGeo.torso.dispose();
-      sharedGeo.head.dispose();
-      sharedGeo.limb.dispose();
-      sharedGeo.leg.dispose();
-      sharedGeo.visor.dispose();
-      sharedGeo.shoulder.dispose();
-      sharedGeo.plate.dispose();
-      sharedGeo.pouch.dispose();
-      sharedGeo.boot.dispose();
-      sharedGeo.weapon.dispose();
-      sharedGeo.barrel.dispose();
-      sharedGeo = null;
-    }
   };
 
   return {

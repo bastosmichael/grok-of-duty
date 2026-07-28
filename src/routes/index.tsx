@@ -10,7 +10,6 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
-
 const roadmap = [
   {
     phase: "PHASE 01",
@@ -180,7 +179,6 @@ function Index() {
                 View Roadmap
               </a>
             </div>
-
           </div>
         </div>
       </section>

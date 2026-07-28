@@ -31,12 +31,6 @@ type SparkBurst = PoolItem & {
   kind: "concrete" | "flesh" | "smoke" | "dust";
 };
 
-type DebrisChunk = PoolItem & {
-  mesh: THREE.Mesh;
-  vel: THREE.Vector3;
-  angVel: THREE.Vector3;
-};
-
 type ImpactDecal = PoolItem & {
   mesh: THREE.Mesh;
 };
@@ -82,7 +76,7 @@ function randomOnHemisphere(normal: THREE.Vector3, out: THREE.Vector3): THREE.Ve
 
 /**
  * Pooled world-space VFX: tracers, impact sparks, flesh puffs,
- * muzzle smoke, ground dust, and death debris. No per-shot allocations
+ * muzzle smoke and ground dust. No per-shot allocations
  * on the hot path beyond Vector3 copies into pooled slots.
  */
 export function createEffects(scene: THREE.Scene): EffectsSystem {
@@ -92,7 +86,6 @@ export function createEffects(scene: THREE.Scene): EffectsSystem {
 
   // --- Shared geometries ---
   const tracerGeo = new THREE.BoxGeometry(0.02, 0.02, 1);
-  const debrisGeo = new THREE.BoxGeometry(0.08, 0.05, 0.1);
   const decalGeo = new THREE.CircleGeometry(0.072, 10);
 
   // --- Tracer pool ---
@@ -160,32 +153,6 @@ export function createEffects(scene: THREE.Scene): EffectsSystem {
     });
   }
 
-  // --- Death debris chunks ---
-  const DEBRIS_POOL = 40;
-  const debris: DebrisChunk[] = [];
-  const debrisMat = new THREE.MeshStandardMaterial({
-    color: 0x3a3e44,
-    metalness: 0.75,
-    roughness: 0.4,
-    emissive: 0x221100,
-    emissiveIntensity: 0.35,
-  });
-
-  for (let i = 0; i < DEBRIS_POOL; i++) {
-    const mesh = new THREE.Mesh(debrisGeo, debrisMat.clone());
-    mesh.visible = false;
-    mesh.castShadow = false;
-    root.add(mesh);
-    debris.push({
-      active: false,
-      life: 0,
-      maxLife: 0.9,
-      mesh,
-      vel: new THREE.Vector3(),
-      angVel: new THREE.Vector3(),
-    });
-  }
-
   // --- Persistent world bullet marks ---
   const DECAL_POOL = 40;
   const decals: ImpactDecal[] = [];
@@ -226,17 +193,6 @@ export function createEffects(scene: THREE.Scene): EffectsSystem {
     let oldest = bursts[0];
     for (const b of bursts) {
       if (b.life < oldest.life) oldest = b;
-    }
-    return oldest;
-  }
-
-  function acquireDebris(): DebrisChunk | null {
-    for (const d of debris) {
-      if (!d.active) return d;
-    }
-    let oldest = debris[0];
-    for (const d of debris) {
-      if (d.life < oldest.life) oldest = d;
     }
     return oldest;
   }
@@ -375,38 +331,14 @@ export function createEffects(scene: THREE.Scene): EffectsSystem {
   };
 
   const spawnDeath = (position: THREE.Vector3): void => {
-    // Center burst slightly above ground feet
+    // A restrained human-scale impact: a brief hit mist and ground dust.
+    // Enemies are operators, not exploding robots, so death never ejects
+    // metallic chunks or a concrete blast.
     _tmp.copy(position);
-    _tmp.y += 1.0;
-    activateBurst("concrete", _tmp, _up, 14, 5.5, 0.45);
-    activateBurst("smoke", _tmp, _up, 8, 1.8, 0.7);
-
-    // Metal debris chunks
-    for (let i = 0; i < 8; i++) {
-      const d = acquireDebris();
-      if (!d) break;
-      d.active = true;
-      d.life = 0.7 + Math.random() * 0.35;
-      d.maxLife = d.life;
-      d.mesh.position.copy(position);
-      d.mesh.position.y += 0.6 + Math.random() * 0.9;
-      d.mesh.scale.set(
-        0.6 + Math.random() * 1.2,
-        0.5 + Math.random() * 1.0,
-        0.6 + Math.random() * 1.2,
-      );
-      d.vel.set((Math.random() - 0.5) * 7, 2.5 + Math.random() * 4, (Math.random() - 0.5) * 7);
-      d.angVel.set(
-        (Math.random() - 0.5) * 12,
-        (Math.random() - 0.5) * 12,
-        (Math.random() - 0.5) * 12,
-      );
-      const mat = d.mesh.material as THREE.MeshStandardMaterial;
-      mat.opacity = 1;
-      mat.transparent = true;
-      mat.emissiveIntensity = 0.5;
-      d.mesh.visible = true;
-    }
+    _tmp.y += 0.95;
+    activateBurst("flesh", _tmp, _up, 12, 2.6, 0.42);
+    activateBurst("smoke", _tmp, _up, 5, 0.75, 0.5);
+    activateBurst("dust", position, _up, 6, 1.1, 0.32);
   };
 
   const spawnMuzzleSmoke = (position: THREE.Vector3, direction: THREE.Vector3): void => {
@@ -467,35 +399,6 @@ export function createEffects(scene: THREE.Scene): EffectsSystem {
       }
     }
 
-    // Debris
-    for (const d of debris) {
-      if (!d.active) continue;
-      d.life -= safeDt;
-      d.vel.y -= 14 * safeDt;
-      d.mesh.position.addScaledVector(d.vel, safeDt);
-      d.mesh.rotation.x += d.angVel.x * safeDt;
-      d.mesh.rotation.y += d.angVel.y * safeDt;
-      d.mesh.rotation.z += d.angVel.z * safeDt;
-
-      // Ground bounce-ish clamp
-      if (d.mesh.position.y < 0.04) {
-        d.mesh.position.y = 0.04;
-        d.vel.y *= -0.25;
-        d.vel.x *= 0.7;
-        d.vel.z *= 0.7;
-      }
-
-      const mat = d.mesh.material as THREE.MeshStandardMaterial;
-      const k = Math.max(0, d.life / d.maxLife);
-      mat.opacity = k;
-      mat.emissiveIntensity = k * 0.5;
-
-      if (d.life <= 0) {
-        d.active = false;
-        d.mesh.visible = false;
-      }
-    }
-
     // Bullet marks persist long enough to communicate shot placement, then
     // ease out instead of vanishing on a hard timer.
     for (const d of decals) {
@@ -520,22 +423,17 @@ export function createEffects(scene: THREE.Scene): EffectsSystem {
       b.points.geometry.dispose();
       (b.points.material as THREE.Material).dispose();
     }
-    for (const d of debris) {
-      (d.mesh.material as THREE.Material).dispose();
-    }
     for (const d of decals) {
       (d.mesh.material as THREE.Material).dispose();
     }
 
     tracerGeo.dispose();
-    debrisGeo.dispose();
     decalGeo.dispose();
     tracerMat.dispose();
     concreteMat.dispose();
     fleshMat.dispose();
     smokeMat.dispose();
     dustMat.dispose();
-    debrisMat.dispose();
     decalMat.dispose();
 
     while (root.children.length > 0) {
