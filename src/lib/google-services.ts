@@ -57,9 +57,19 @@ export function initializeGoogleServices(
   if (!shouldLoadGoogleServices(windowRef.location.hostname)) return false;
 
   windowRef.dataLayer ??= [];
-  windowRef.gtag ??= function gtag(...args: unknown[]) {
-    windowRef.dataLayer?.push(args);
-  } as GoogleTag;
+  // Always push a 3-tuple so queue entries match gtag's (command, target, params) shape.
+  windowRef.gtag ??= (command, targetOrDate, parameters) => {
+    windowRef.dataLayer?.push([command, targetOrDate, parameters]);
+  };
+
+  // Configure once before injecting the remote script (gtag queues until it loads).
+  if (!documentRef.getElementById("google-analytics-js")) {
+    windowRef.gtag("js", new Date());
+    windowRef.gtag("config", GOOGLE_ANALYTICS_ID, {
+      page_path: windowRef.location.pathname,
+      send_page_view: true,
+    });
+  }
 
   ensureScript(
     documentRef,
@@ -71,16 +81,6 @@ export function initializeGoogleServices(
     "google-adsense-js",
     `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${GOOGLE_ADSENSE_CLIENT}`,
   );
-
-  if (!documentRef.documentElement.dataset.gaConfigured) {
-    windowRef.gtag("js", new Date());
-    windowRef.gtag("config", GOOGLE_ANALYTICS_ID, {
-      page_path: windowRef.location.pathname + windowRef.location.search,
-      send_page_view: true,
-    });
-    documentRef.documentElement.dataset.gaConfigured = "1";
-  }
-
   return true;
 }
 
