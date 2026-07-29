@@ -59,8 +59,11 @@ function dayAmount(phase: number): number {
   return t * t * (3 - 2 * t);
 }
 
-export function sampleDayNight(elapsedSec: number, periodSec = DAY_NIGHT_PERIOD_SEC): DayNightSample {
-  const phase = ((elapsedSec % periodSec) + periodSec) % periodSec / periodSec;
+export function sampleDayNight(
+  elapsedSec: number,
+  periodSec = DAY_NIGHT_PERIOD_SEC,
+): DayNightSample {
+  const phase = (((elapsedSec % periodSec) + periodSec) % periodSec) / periodSec;
   const dayFactor = dayAmount(phase);
   const lampFactor = Math.max(0, Math.min(1, 1 - (dayFactor - 0.15) / 0.45));
 

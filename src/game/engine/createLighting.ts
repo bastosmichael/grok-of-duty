@@ -133,11 +133,7 @@ export function createLighting(scene: THREE.Scene, renderer: THREE.WebGLRenderer
     const elev = Math.max(0.08, 0.15 + s.dayFactor * 1.1);
     const y = Math.sin(elev) * dist;
     const r = Math.cos(elev) * dist;
-    sun.position.set(
-      focus.x + Math.cos(s.sunAzimuth) * r,
-      y,
-      focus.z + Math.sin(s.sunAzimuth) * r,
-    );
+    sun.position.set(focus.x + Math.cos(s.sunAzimuth) * r, y, focus.z + Math.sin(s.sunAzimuth) * r);
     sun.target.position.set(focus.x, 0, focus.z);
     sun.target.updateMatrixWorld();
     sun.shadow.camera.updateMatrixWorld();

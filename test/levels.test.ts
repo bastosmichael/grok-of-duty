@@ -27,8 +27,9 @@ describe("progressive procedural levels", () => {
 
     const first = profiles[0]!;
     const late = profiles[9]!;
-    expect(first.arenaHalfSize).toBeGreaterThanOrEqual(15.5);
-    expect(first.arenaHalfSize).toBeLessThan(18);
+    // Street pursuit bounds — large enough for corridors, not a sealed box
+    expect(first.arenaHalfSize).toBeGreaterThanOrEqual(48);
+    expect(first.arenaHalfSize).toBeLessThan(52);
     expect(first.enemyDamageScale).toBeLessThan(0.6);
     expect(first.enemySpeed).toBeLessThan(2.7);
     expect(first.enemyHp).toBeLessThanOrEqual(50);
@@ -76,7 +77,7 @@ describe("progressive procedural levels", () => {
     expect(second.endsWith("·2")).toBe(true);
   });
 
-  test("builds removable arena boundaries and keeps random cover clear of the player", () => {
+  test("builds removable street cover near the player without enclosing walls", () => {
     const scene = new THREE.Scene();
     const baseCollider: Collider = {
       min: new THREE.Vector3(70, 0, 70),
@@ -88,12 +89,13 @@ describe("progressive procedural levels", () => {
     const arena = createLevelArena(scene, worldColliders, profile, seededRandom(999), player);
 
     expect(arena.group.parent).toBe(scene);
-    expect(arena.colliders.length).toBeGreaterThanOrEqual(4);
-    expect(arena.colliders.length).toBeLessThanOrEqual(4 + profile.coverCount);
+    // Cover only — no four-wall box
+    expect(arena.colliders.length).toBeGreaterThanOrEqual(1);
+    expect(arena.colliders.length).toBeLessThanOrEqual(profile.coverCount + 2);
     expect(worldColliders.length).toBe(1 + arena.colliders.length);
 
-    const coverColliders = arena.colliders.filter((collider) => collider.max.y <= 1.3);
-    for (const cover of coverColliders) {
+    for (const cover of arena.colliders) {
+      expect(cover.max.y).toBeLessThanOrEqual(1.35);
       const closestX = THREE.MathUtils.clamp(player.x, cover.min.x, cover.max.x);
       const closestZ = THREE.MathUtils.clamp(player.z, cover.min.z, cover.max.z);
       expect(Math.hypot(player.x - closestX, player.z - closestZ)).toBeGreaterThanOrEqual(5.75);
