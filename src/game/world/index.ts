@@ -1,4 +1,6 @@
 export { createWorld, type WorldApi } from "./createWorld";
+export { createCityStream, CITY_CHUNK, setCityLampFactor } from "./cityStream";
+export { sampleDayNight, DAY_NIGHT_PERIOD_SEC, type DayNightSample } from "./dayNight";
 export {
   createWorldMaterials,
   makeBuilding,

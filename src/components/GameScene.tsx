@@ -74,13 +74,13 @@ export default function GameScene({ onExit }: Props) {
 
       const lights = createLighting(gfx.scene, gfx.renderer);
       disposers.push(() => lights.dispose());
-      setLoad(0.32, "Compiling night-ops lighting…");
+      setLoad(0.32, "Compiling day/night lighting…");
       await yieldFrame();
       if (disposed) return;
 
       const world = createWorld(gfx.scene);
       disposers.push(() => world.dispose());
-      setLoad(0.48, "Streaming tactical compound…");
+      setLoad(0.48, "Streaming city districts…");
       await yieldFrame();
       if (disposed) return;
 
@@ -239,12 +239,13 @@ export default function GameScene({ onExit }: Props) {
         // Pointer-lock loss is a full simulation pause. The world continues at
         // a cinematic 20 fps behind the briefing while player state, reloading,
         // regeneration, enemy AI, and damage remain frozen.
+        const playerPos = player.getPosition();
         if (isPlaying) {
           pausedRenderTime = 0;
-          lights.update(dt, elapsed);
-          world.update(dt, elapsed);
+          world.update(dt, elapsed, playerPos);
+          lights.update(dt, elapsed, playerPos);
           player.update(dt);
-          combat.update(dt, player.getPosition());
+          combat.update(dt, playerPos);
         } else {
           player.update(0);
           pausedRenderTime += dt;
@@ -254,8 +255,8 @@ export default function GameScene({ onExit }: Props) {
           }
           const presentationDt = Math.min(pausedRenderTime, 0.1);
           pausedRenderTime = 0;
-          lights.update(presentationDt, elapsed);
-          world.update(presentationDt, elapsed);
+          world.update(presentationDt, elapsed, playerPos);
+          lights.update(presentationDt, elapsed, playerPos);
         }
 
         // Decay HUD flash timers (kill/HS flags stick until marker fades out)

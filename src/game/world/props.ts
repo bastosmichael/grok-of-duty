@@ -1569,6 +1569,7 @@ export function makeStarfieldAndMoon(mats: WorldMaterials): PropResult {
 
   // Moon disc + glow halo — matches moon light direction-ish (NE sky)
   const moon = new THREE.Mesh(new THREE.PlaneGeometry(28, 28), mats.moonMat);
+  moon.name = "MoonDisc";
   moon.position.set(90, 110, -70);
   moon.lookAt(0, 40, 0);
   moon.renderOrder = -8;
@@ -1577,6 +1578,7 @@ export function makeStarfieldAndMoon(mats: WorldMaterials): PropResult {
   const haloMat = mats.moonMat.clone();
   haloMat.opacity = 0.35;
   const halo = new THREE.Mesh(new THREE.PlaneGeometry(48, 48), haloMat);
+  halo.name = "MoonDisc";
   halo.position.copy(moon.position);
   halo.position.multiplyScalar(0.98);
   halo.lookAt(0, 40, 0);

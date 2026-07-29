@@ -1,81 +1,47 @@
 import * as THREE from "three";
+import { DAY_NIGHT_PERIOD_SEC, sampleDayNight, type DayNightSample } from "@/game/world/dayNight";
+import { setCityLampFactor } from "@/game/world/cityStream";
 
 export type LightingSystem = {
   hemi: THREE.HemisphereLight;
-  moon: THREE.DirectionalLight;
+  /** Primary key light (sun by day, moon by night). */
+  sun: THREE.DirectionalLight;
   ambient: THREE.AmbientLight;
+  /** @deprecated alias of sun */
+  moon: THREE.DirectionalLight;
   floodlights: THREE.PointLight[];
   searchlight: THREE.SpotLight | null;
-  /** Advance searchlight sweep and any animated light state */
-  update: (dt: number, elapsed: number) => void;
+  /** Last sampled day/night state. */
+  getSample: () => DayNightSample;
+  /**
+   * Advance day/night cycle, move key light, tint sky/fog, drive city lamps.
+   * Pass player position so shadows follow the streamed district.
+   */
+  update: (dt: number, elapsed: number, playerPos?: THREE.Vector3) => void;
   dispose: () => void;
 };
 
-/** ~80-unit arena half-extent used for shadow frustum / flood placement */
-const ARENA_HALF = 40;
-
-/**
- * Dark outdoor night IBL — NOT RoomEnvironment (studio white walls).
- * Room IBL makes metal containers look like a product-shot showroom.
- * Cool zenith + warm ground bounce matches moon key / sodium floods.
- */
-function createNightOpsEnvironment(renderer: THREE.WebGLRenderer): {
+function createDayEnv(renderer: THREE.WebGLRenderer): {
   texture: THREE.Texture;
   dispose: () => void;
 } {
   const pmrem = new THREE.PMREMGenerator(renderer);
   pmrem.compileEquirectangularShader();
-
   const envScene = new THREE.Scene();
-
-  // Cool upper hemisphere (moonlit sky), warm-brown ground bounce (earth / sodium)
-  const hemi = new THREE.HemisphereLight(0x6a849e, 0x1c1610, 0.55);
-  envScene.add(hemi);
-
-  // Soft moon key into the probe (direction matches gameplay moon)
-  const moonProbe = new THREE.DirectionalLight(0xc4d4f0, 0.7);
-  moonProbe.position.set(2.2, 4.0, -1.4);
-  envScene.add(moonProbe);
-
-  // Warm sodium bounce from below-side — keeps metal from going pure steel-blue
-  const sodiumBounce = new THREE.DirectionalLight(0xffa060, 0.18);
-  sodiumBounce.position.set(-1.5, 0.35, 1.2);
-  envScene.add(sodiumBounce);
-
-  // Dark ground receiver so PMREM samples contact-ish bounce, not empty black
+  envScene.add(new THREE.HemisphereLight(0xa0c8f0, 0x6a5a48, 0.9));
+  const sun = new THREE.DirectionalLight(0xfff0d0, 1.2);
+  sun.position.set(2, 4, 1);
+  envScene.add(sun);
   const ground = new THREE.Mesh(
-    new THREE.CircleGeometry(6, 32),
-    new THREE.MeshStandardMaterial({
-      color: 0x141210,
-      roughness: 1,
-      metalness: 0,
-    }),
+    new THREE.CircleGeometry(6, 24),
+    new THREE.MeshStandardMaterial({ color: 0x6a6050, roughness: 1, metalness: 0 }),
   );
   ground.rotation.x = -Math.PI / 2;
-  ground.position.y = -1.2;
+  ground.position.y = -1;
   envScene.add(ground);
-
-  // Dim backdrop box faces (very dark cool walls) for stable specular lobes
-  const box = new THREE.Mesh(
-    new THREE.BoxGeometry(12, 8, 12),
-    new THREE.MeshBasicMaterial({
-      color: 0x0a1018,
-      side: THREE.BackSide,
-    }),
-  );
-  box.position.y = 1.5;
-  envScene.add(box);
-
-  // Keep blur inside PMREM's supported sample budget; broader roughness comes
-  // from the materials themselves rather than an over-sampled probe.
-  const envRT = pmrem.fromScene(envScene, 0.035);
-
-  // Tear down probe scene geometry/materials
+  const envRT = pmrem.fromScene(envScene, 0.04);
   ground.geometry.dispose();
   (ground.material as THREE.Material).dispose();
-  box.geometry.dispose();
-  (box.material as THREE.Material).dispose();
-
   return {
     texture: envRT.texture,
     dispose: () => {
@@ -86,197 +52,145 @@ function createNightOpsEnvironment(renderer: THREE.WebGLRenderer): {
 }
 
 /**
- * Night-ops military lighting: cool moonlight, warm sodium floodlights,
- * deep shadow pockets, sweeping searchlight, outdoor night IBL.
+ * Outdoor lighting with a slow day ↔ night cycle (~12 min full period).
+ * City street lamps are driven via setCityLampFactor.
  */
 export function createLighting(scene: THREE.Scene, renderer: THREE.WebGLRenderer): LightingSystem {
   const disposables: Array<{ dispose: () => void }> = [];
 
-  // --- Cool lunar hemisphere + warm ground bounce ---
-  // Balanced night: readable structures without bleaching asphalt
-  const hemi = new THREE.HemisphereLight(0x7f9cbd, 0x231d14, 0.72);
-  hemi.name = "NightHemi";
+  const hemi = new THREE.HemisphereLight(0xa8c8f0, 0x8a7a60, 0.85);
+  hemi.name = "SkyHemi";
   scene.add(hemi);
 
-  const ambient = new THREE.AmbientLight(0x1d2b3d, 0.2);
-  ambient.name = "NightAmbient";
+  const ambient = new THREE.AmbientLight(0xc0d0e0, 0.45);
+  ambient.name = "FillAmbient";
   scene.add(ambient);
 
-  // Moon directional (key) — cool key with contact shadows
-  const moon = new THREE.DirectionalLight(0xcadcf5, 2.75);
-  moon.name = "Moon";
-  moon.position.set(36, 55, -28);
-  moon.target.position.set(0, 0, 0);
-  moon.castShadow = true;
-  moon.shadow.intensity = 0.45;
+  const sun = new THREE.DirectionalLight(0xfff2d0, 2.8);
+  sun.name = "SunKey";
+  sun.position.set(40, 60, -20);
+  sun.target.position.set(0, 0, 0);
+  sun.castShadow = true;
+  sun.shadow.intensity = 0.55;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.camera.near = 2;
+  sun.shadow.camera.far = 160;
+  sun.shadow.camera.left = -55;
+  sun.shadow.camera.right = 55;
+  sun.shadow.camera.top = 55;
+  sun.shadow.camera.bottom = -55;
+  sun.shadow.camera.updateProjectionMatrix();
+  sun.shadow.bias = -0.00025;
+  sun.shadow.normalBias = 0.025;
+  sun.shadow.radius = 2.0;
+  scene.add(sun);
+  scene.add(sun.target);
 
-  const shadow = moon.shadow;
-  // 2048 is the browser sweet spot; 4096 doubles cost for marginal gain
-  shadow.mapSize.set(2048, 2048);
-  shadow.camera.near = 2;
-  shadow.camera.far = 130;
-  // Slightly tighter than arena so texels concentrate on playable space
-  const shadowHalf = ARENA_HALF * 0.95;
-  shadow.camera.left = -shadowHalf;
-  shadow.camera.right = shadowHalf;
-  shadow.camera.top = shadowHalf;
-  shadow.camera.bottom = -shadowHalf;
-  shadow.camera.updateProjectionMatrix();
-  shadow.bias = -0.00025;
-  shadow.normalBias = 0.025;
-  shadow.radius = 2.0;
+  // Soft fill opposite the sun (bounce / ambient occlusion lift)
+  const bounce = new THREE.DirectionalLight(0x88aacc, 0.35);
+  bounce.name = "SkyBounce";
+  bounce.position.set(-20, 25, 30);
+  scene.add(bounce);
 
-  scene.add(moon);
-  scene.add(moon.target);
+  const dayEnv = createDayEnv(renderer);
+  scene.environment = dayEnv.texture;
+  scene.environmentIntensity = 0.55;
+  disposables.push(dayEnv);
 
-  // --- Sodium / tactical floodlights around map edges + plaza fill ---
-  const floodConfigs: Array<{
-    x: number;
-    y: number;
-    z: number;
-    intensity: number;
-    distance: number;
-    color?: number;
-  }> = [
-    // PointLight intensity is candela in current Three.js. These values create
-    // genuinely readable pools under inverse-square falloff instead of the
-    // almost-black legacy 1–3 intensity range.
-    { x: -36, y: 8, z: -34, intensity: 190, distance: 34 },
-    { x: 36, y: 8, z: -34, intensity: 175, distance: 34 },
-    { x: -36, y: 8, z: 34, intensity: 170, distance: 32 },
-    { x: 36, y: 8, z: 34, intensity: 195, distance: 34 },
-    // Plaza lighting deliberately alternates sodium and cool security LEDs,
-    // producing color contrast that helps silhouettes read across lanes.
-    { x: -13, y: 7.5, z: 8, intensity: 165, distance: 27 },
-    { x: 13, y: 7.5, z: 8, intensity: 145, distance: 26, color: 0x8fc6ff },
-    { x: 0, y: 8.5, z: -21, intensity: 180, distance: 30 },
-    { x: 0, y: 9, z: 23, intensity: 155, distance: 29, color: 0xa8d4ff },
-  ];
+  let lastSample = sampleDayNight(0);
+  const tmpColor = new THREE.Color();
+  const playerFollow = new THREE.Vector3();
 
-  const floodlights: THREE.PointLight[] = [];
-  for (let i = 0; i < floodConfigs.length; i++) {
-    const cfg = floodConfigs[i]!;
-    // decay 2 ≈ physical inverse-square falloff
-    const light = new THREE.PointLight(cfg.color ?? 0xff9a4a, cfg.intensity, cfg.distance, 2);
-    light.name = `FloodSodium_${i}`;
-    light.position.set(cfg.x, cfg.y, cfg.z);
-    // Shadows off for all floods (perf); moon owns contact shadows
-    light.castShadow = false;
-    scene.add(light);
-    floodlights.push(light);
-  }
+  // Start daytime so first load is bright streets
+  const dayOffset = DAY_NIGHT_PERIOD_SEC * 0.22; // near noon
 
-  // --- Sweeping searchlight (tower / helo vibe) ---
-  // Cool white, tight cone, high intensity so it reads through fog
-  const searchlight = new THREE.SpotLight(
-    0xe8f0ff,
-    2100,
-    110,
-    THREE.MathUtils.degToRad(14),
-    0.5,
-    1.5,
-  );
-  searchlight.name = "Searchlight";
-  searchlight.position.set(0, 24, 0);
-  searchlight.target.position.set(12, 0, 8);
-  // Shadow off — one 2048 cascade is already budget; cone still sells the read
-  searchlight.castShadow = false;
-  scene.add(searchlight);
-  scene.add(searchlight.target);
+  const applySample = (s: DayNightSample, playerPos?: THREE.Vector3): void => {
+    lastSample = s;
+    hemi.color.setHex(s.hemiSky);
+    hemi.groundColor.setHex(s.hemiGround);
+    hemi.intensity = s.hemiIntensity;
+    ambient.color.setHex(s.ambientColor);
+    ambient.intensity = s.ambientIntensity;
+    sun.color.setHex(s.sunColor);
+    sun.intensity = Math.max(0.15, s.sunIntensity);
+    bounce.intensity = 0.15 + s.dayFactor * 0.4;
+    scene.environmentIntensity = s.envIntensity;
+    renderer.toneMappingExposure = s.exposure;
 
-  // Standard fog does not illuminate, so a restrained translucent cone is
-  // needed to make the sweeping searchlight legible in the air.
-  const beamLength = 48;
-  const beamRadius = Math.tan(searchlight.angle) * beamLength;
-  const beamMaterial = new THREE.MeshBasicMaterial({
-    color: 0x9cc6ee,
-    transparent: true,
-    opacity: 0.036,
-    depthWrite: false,
-    depthTest: true,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
-    fog: true,
-    toneMapped: false,
-  });
-  const beamGeometry = new THREE.CylinderGeometry(0.05, beamRadius, beamLength, 20, 1, true);
-  const searchBeam = new THREE.Mesh(beamGeometry, beamMaterial);
-  searchBeam.name = "SearchlightAtmosphericCone";
-  searchBeam.renderOrder = 2;
-  searchBeam.frustumCulled = false;
-  scene.add(searchBeam);
-
-  // --- Outdoor night IBL (subtle specular / ambient GI cue) ---
-  const nightEnv = createNightOpsEnvironment(renderer);
-  scene.environment = nightEnv.texture;
-  // Keep IBL low so sodium/moon remain the lighting read (metals get just enough reflection)
-  // Specular fill on metals without washing diffuse
-  scene.environmentIntensity = 0.48;
-  disposables.push(nightEnv);
-
-  const beamDirection = new THREE.Vector3();
-  const beamAxis = new THREE.Vector3(0, -1, 0);
-
-  const update = (dt: number, elapsed: number): void => {
-    // Slow figure-eight / orbit sweep across the arena floor
-    const radius = ARENA_HALF * 0.55;
-    const speed = 0.16;
-    const x = Math.cos(elapsed * speed) * radius;
-    const z = Math.sin(elapsed * speed * 0.73) * radius * 0.85;
-    searchlight.target.position.set(x, 0.05, z);
-    searchlight.target.updateMatrixWorld();
-
-    beamDirection.copy(searchlight.target.position).sub(searchlight.position).normalize();
-    searchBeam.position.copy(searchlight.position).addScaledVector(beamDirection, beamLength * 0.5);
-    searchBeam.quaternion.setFromUnitVectors(beamAxis, beamDirection);
-    beamMaterial.opacity =
-      0.032 + Math.sin(elapsed * 1.7) * 0.003 + Math.sin(elapsed * 7.3) * 0.0015;
-
-    // Tiny sodium flicker for tactical authenticity (subtle — not horror strobe)
-    for (let i = 0; i < floodlights.length; i++) {
-      const base = floodConfigs[i]!.intensity;
-      const flicker =
-        1 + Math.sin(elapsed * 9.1 + i * 1.7) * 0.028 + Math.sin(elapsed * 23.0 + i * 0.9) * 0.012;
-      floodlights[i]!.intensity = base * flicker;
+    if (scene.fog && scene.fog instanceof THREE.FogExp2) {
+      scene.fog.color.setHex(s.fogColor);
+      scene.fog.density = s.fogDensity;
+    }
+    if (scene.background instanceof THREE.Color) {
+      scene.background.setHex(s.skyColor);
+    } else {
+      scene.background = tmpColor.setHex(s.skyColor).clone();
     }
 
-    void dt;
+    // Sun orbit relative to player so shadows stay useful while streaming
+    const focus = playerPos ?? playerFollow;
+    const dist = 70;
+    const elev = Math.max(0.08, 0.15 + s.dayFactor * 1.1);
+    const y = Math.sin(elev) * dist;
+    const r = Math.cos(elev) * dist;
+    sun.position.set(
+      focus.x + Math.cos(s.sunAzimuth) * r,
+      y,
+      focus.z + Math.sin(s.sunAzimuth) * r,
+    );
+    sun.target.position.set(focus.x, 0, focus.z);
+    sun.target.updateMatrixWorld();
+    sun.shadow.camera.updateMatrixWorld();
+
+    setCityLampFactor(scene, s.lampFactor);
+
+    // Fade stars / moon with day
+    const sky = scene.getObjectByName("SkyDome");
+    if (sky) {
+      sky.traverse((obj) => {
+        const pts = obj as THREE.Points;
+        if (pts.isPoints && pts.material) {
+          const mat = pts.material as THREE.PointsMaterial;
+          mat.opacity = s.starOpacity;
+          mat.transparent = true;
+          mat.visible = s.starOpacity > 0.02;
+        }
+        const mesh = obj as THREE.Mesh;
+        if (mesh.isMesh && mesh.name === "MoonDisc") {
+          mesh.visible = s.starOpacity > 0.15;
+        }
+      });
+    }
+  };
+
+  applySample(sampleDayNight(dayOffset));
+
+  const update = (_dt: number, elapsed: number, playerPos?: THREE.Vector3): void => {
+    if (playerPos) playerFollow.copy(playerPos);
+    const s = sampleDayNight(elapsed + dayOffset);
+    applySample(s, playerFollow);
   };
 
   const dispose = (): void => {
     scene.remove(hemi);
     scene.remove(ambient);
-    scene.remove(moon);
-    scene.remove(moon.target);
-    moon.shadow.map?.dispose();
-
-    for (const light of floodlights) {
-      scene.remove(light);
-    }
-    floodlights.length = 0;
-
-    scene.remove(searchlight);
-    scene.remove(searchlight.target);
-    scene.remove(searchBeam);
-    beamGeometry.dispose();
-    beamMaterial.dispose();
-
-    if (scene.environment === nightEnv.texture) {
-      scene.environment = null;
-    }
-
-    for (const d of disposables) {
-      d.dispose();
-    }
+    scene.remove(sun);
+    scene.remove(sun.target);
+    scene.remove(bounce);
+    sun.shadow.map?.dispose();
+    if (scene.environment === dayEnv.texture) scene.environment = null;
+    for (const d of disposables) d.dispose();
     disposables.length = 0;
   };
 
   return {
     hemi,
-    moon,
+    sun,
+    moon: sun,
     ambient,
-    floodlights,
-    searchlight,
+    floodlights: [],
+    searchlight: null,
+    getSample: () => lastSample,
     update,
     dispose,
   };

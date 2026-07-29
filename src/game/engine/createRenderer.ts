@@ -38,13 +38,9 @@ const DEFAULT_BLOOM_RADIUS = 0.45;
 // Windows/lamps/visors bloom; asphalt stays below threshold
 const DEFAULT_BLOOM_THRESHOLD = 0.78;
 
-/** Cool night void — matches moon key, not pure black crush */
-const NIGHT_FOG_COLOR = 0x0c1420;
-
-/**
- * Very light fog — combat readability first; sky/stars still frame the horizon.
- */
-const NIGHT_FOG_DENSITY = 0.0022;
+/** Default daytime sky — day/night cycle re-tints fog + background each frame. */
+const DEFAULT_SKY_COLOR = 0x87b8e8;
+const DEFAULT_FOG_DENSITY = 0.0016;
 
 /** Cap DPR — full 2× + bloom + SMAA tanks laptop GPUs with little visual gain */
 const MAX_PIXEL_RATIO = 1.75;
@@ -62,10 +58,10 @@ export function createRenderer(mount: HTMLElement): GameRenderer {
   const height = Math.max(1, mount.clientHeight || window.innerHeight);
   const pixelRatio = Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO);
 
-  // --- Scene (cool night void + light atmospheric fog) ---
+  // --- Scene (daytime default; createLighting drives day/night tint) ---
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(NIGHT_FOG_COLOR);
-  scene.fog = new THREE.FogExp2(NIGHT_FOG_COLOR, NIGHT_FOG_DENSITY);
+  scene.background = new THREE.Color(DEFAULT_SKY_COLOR);
+  scene.fog = new THREE.FogExp2(DEFAULT_SKY_COLOR, DEFAULT_FOG_DENSITY);
 
   // --- Camera (FOV 75 — player systems may narrow for ADS) ---
   const camera = new THREE.PerspectiveCamera(75, width / height, 0.08, 400);

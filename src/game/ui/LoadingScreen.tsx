@@ -8,7 +8,7 @@ const CHECKLIST: { at: number; line: string; code: string }[] = [
   { at: 0.15, line: "GPU allocation", code: "GFX" },
   { at: 0.28, line: "Tactical geometry", code: "GEO" },
   { at: 0.42, line: "Shader pipelines", code: "SHD" },
-  { at: 0.55, line: "Physics colliders", code: "PHY" },
+  { at: 0.55, line: "City stream + colliders", code: "PHY" },
   { at: 0.68, line: "Weapon systems", code: "WPN" },
   { at: 0.8, line: "Spatial audio", code: "AUD" },
   { at: 0.92, line: "Command uplink", code: "COM" },
