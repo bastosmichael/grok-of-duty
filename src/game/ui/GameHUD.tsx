@@ -1,5 +1,5 @@
 import type { KeyboardEvent } from "react";
-import type { TrainingMode } from "@/game/modes";
+import { getAlternateTrainingMode, TRAINING_MODES, type TrainingMode } from "@/game/modes";
 import type { DamageIndicator, GameHudState } from "@/game/types";
 import AdSlot from "@/components/AdSlot";
 import { AD_SLOTS } from "@/lib/google-services";
@@ -8,6 +8,8 @@ interface GameHUDProps {
   state: GameHudState;
   onExit: () => void;
   onEngage: () => void;
+  onRetry: () => void;
+  onSwitchMode: (mode: TrainingMode) => void;
   mode: TrainingMode;
   /** Touch device: swap pointer-lock copy for on-screen control copy. */
   touch?: boolean;
@@ -208,7 +210,15 @@ function Key({ children }: { children: string }) {
   );
 }
 
-export function GameHUD({ state, onExit, onEngage, mode, touch = false }: GameHUDProps) {
+export function GameHUD({
+  state,
+  onExit,
+  onEngage,
+  onRetry,
+  onSwitchMode,
+  mode,
+  touch = false,
+}: GameHUDProps) {
   const {
     health,
     maxHealth,
@@ -236,6 +246,7 @@ export function GameHUD({ state, onExit, onEngage, mode, touch = false }: GameHU
     killFeed,
     locked,
     ready,
+    gameOver,
   } = state;
 
   const healthRatio = maxHealth > 0 ? health / maxHealth : 0;
@@ -245,6 +256,7 @@ export function GameHUD({ state, onExit, onEngage, mode, touch = false }: GameHU
   const dmgAlpha = clamp01(damageFlash);
   const armorMax = maxArmor > 0 ? maxArmor : 50;
   const isResume = level > 1 || score > 0 || kills > 0 || health < maxHealth || ammo < 30;
+  const alternateMode = getAlternateTrainingMode(mode);
   const centerMessage = hitMarkerKill ? "TARGET ELIMINATED" : hitMarkerHeadshot ? "HEADSHOT" : null;
   const handleBriefingKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key === "Escape") {
@@ -529,8 +541,99 @@ export function GameHUD({ state, onExit, onEngage, mode, touch = false }: GameHU
         </div>
       </section>
 
+      {ready && gameOver && (
+        <div
+          className="pointer-events-auto absolute inset-0 z-40 flex items-start justify-center overflow-y-auto overscroll-contain bg-black/75 p-3 backdrop-blur-[5px] sm:items-center sm:p-6"
+          style={{ touchAction: "pan-y" }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="game-over-title"
+          onKeyDown={handleBriefingKeyDown}
+        >
+          <div
+            className="hud-motion relative w-full max-w-2xl overflow-hidden border border-red-400/35 bg-[#090a0b]/97 shadow-[0_30px_120px_rgba(0,0,0,.9),0_0_70px_rgba(239,68,68,.12)]"
+            style={{ animation: "briefing-in .38s ease-out both" }}
+          >
+            <TacticalCorners className="[&>span]:border-red-400/70" />
+            <div className="h-0.5 bg-gradient-to-r from-transparent via-red-400 to-transparent" />
+            <div className="grid md:grid-cols-[1.05fr_.95fr]">
+              <section className="border-b border-white/10 p-6 text-center md:border-b-0 md:border-r md:p-8">
+                <div className="font-mono text-[9px] font-semibold uppercase tracking-[.34em] text-red-400">
+                  // OPERATOR DOWN
+                </div>
+                <h2
+                  id="game-over-title"
+                  className="mt-3 font-[Orbitron] text-3xl font-black uppercase leading-none text-white sm:text-4xl"
+                >
+                  Mission failed
+                </h2>
+                <p className="mt-3 font-mono text-[10px] uppercase tracking-[.14em] text-white/50">
+                  Your run is over · final result secured
+                </p>
+
+                <div className="relative mx-auto mt-7 max-w-sm border border-primary/50 bg-primary/8 px-4 py-6 shadow-[inset_0_0_40px_rgba(0,0,0,.45),0_0_30px_color-mix(in_oklab,var(--primary)_12%,transparent)]">
+                  <div className="font-mono text-[9px] uppercase tracking-[.3em] text-white/50">
+                    Final score
+                  </div>
+                  <div className="mt-2 font-[Orbitron] text-5xl font-black tabular-nums text-primary text-glow sm:text-6xl">
+                    {score.toString().padStart(5, "0")}
+                  </div>
+                </div>
+              </section>
+
+              <section className="p-6 md:p-8">
+                <dl className="grid grid-cols-2 gap-px bg-white/10">
+                  {[
+                    ["MAP", TRAINING_MODES[mode].title],
+                    ["LEVEL", level.toString().padStart(2, "0")],
+                    ["KILLS", kills.toString().padStart(2, "0")],
+                    ["STATUS", "KIA"],
+                  ].map(([term, detail]) => (
+                    <div key={term} className="min-w-0 bg-[#090a0b] px-3 py-3">
+                      <dt className="font-mono text-[8px] uppercase tracking-[.18em] text-white/40">
+                        {term}
+                      </dt>
+                      <dd className="mt-1 truncate font-[Orbitron] text-[10px] font-bold uppercase text-white">
+                        {detail}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+
+                <div className="mt-6 grid gap-2.5">
+                  <button
+                    type="button"
+                    onClick={onRetry}
+                    autoFocus
+                    className="flex w-full items-center justify-between border border-primary bg-primary px-4 py-3 font-[Orbitron] text-[11px] font-black uppercase tracking-[.18em] text-black transition hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                  >
+                    <span>Redeploy same map</span>
+                    <span aria-hidden="true">↻</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onSwitchMode(alternateMode)}
+                    className="flex w-full items-center justify-between border border-white/20 bg-white/5 px-4 py-3 font-[Orbitron] text-[10px] font-bold uppercase tracking-[.14em] text-white transition hover:border-primary/70 hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                  >
+                    <span>Try {TRAINING_MODES[alternateMode].title}</span>
+                    <span aria-hidden="true">▸</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onExit}
+                    className="w-full border border-white/10 px-4 py-2.5 font-mono text-[9px] uppercase tracking-[.2em] text-white/45 transition hover:border-red-400/60 hover:text-red-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-400"
+                  >
+                    Return to command
+                  </button>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Deployment / pointer-lock briefing */}
-      {ready && !locked && (
+      {ready && !locked && !gameOver && (
         <div
           className="pointer-events-auto absolute inset-0 z-30 flex items-start justify-center overflow-y-auto overscroll-contain bg-black/55 backdrop-blur-[3px] md:items-center"
           style={{

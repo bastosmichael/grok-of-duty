@@ -104,9 +104,11 @@ function Index() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [gameOpen, setGameOpen] = useState(false);
   const [trainingMode, setTrainingMode] = useState<TrainingMode | null>(null);
+  const [gameSession, setGameSession] = useState(0);
   const launch = () => setDialogOpen(true);
   const deploy = (mode: TrainingMode) => {
     setTrainingMode(mode);
+    setGameSession((session) => session + 1);
     setDialogOpen(false);
     setGameOpen(true);
   };
@@ -433,7 +435,13 @@ function Index() {
         <ClientOnly fallback={<GameLoading />}>
           <Suspense fallback={<GameLoading />}>
             <GameScene
+              key={`${trainingMode}-${gameSession}`}
               mode={trainingMode}
+              onRetry={() => setGameSession((session) => session + 1)}
+              onSwitchMode={(nextMode) => {
+                setTrainingMode(nextMode);
+                setGameSession((session) => session + 1);
+              }}
               onExit={() => {
                 setGameOpen(false);
                 setTrainingMode(null);

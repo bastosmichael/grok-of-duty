@@ -43,6 +43,8 @@ export type GameHudState = {
   loadLabel: string;
   locked: boolean;
   ready: boolean;
+  /** Terminal session state after player health reaches zero. */
+  gameOver: boolean;
 };
 
 export type KillFeedEntry = {
@@ -109,4 +111,5 @@ export const DEFAULT_HUD: GameHudState = {
   loadLabel: "Initializing combat systems…",
   locked: false,
   ready: false,
+  gameOver: false,
 };

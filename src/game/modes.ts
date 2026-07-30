@@ -14,3 +14,7 @@ export const TRAINING_MODES = {
 } as const;
 
 export type TrainingMode = keyof typeof TRAINING_MODES;
+
+export function getAlternateTrainingMode(mode: TrainingMode): TrainingMode {
+  return mode === "alley" ? "range" : "alley";
+}

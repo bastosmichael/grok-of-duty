@@ -12,10 +12,12 @@ import { trackGoogleEvent } from "@/lib/google-services";
 
 interface Props {
   onExit: () => void;
+  onRetry: () => void;
+  onSwitchMode: (mode: TrainingMode) => void;
   mode: TrainingMode;
 }
 
-export default function GameScene({ onExit, mode }: Props) {
+export default function GameScene({ onExit, onRetry, onSwitchMode, mode }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const [hud, setHud] = useState<GameHudState>({ ...DEFAULT_HUD });
   const playerRef = useRef<ReturnType<typeof createPlayer> | null>(null);
@@ -51,6 +53,8 @@ export default function GameScene({ onExit, mode }: Props) {
     if (!mount) return;
 
     let disposed = false;
+    let sessionEnded = false;
+    let sessionHud: GameHudState = { ...DEFAULT_HUD };
     let raf = 0;
     const disposers: Array<() => void> = [];
 
@@ -101,6 +105,7 @@ export default function GameScene({ onExit, mode }: Props) {
       let damageFlashT = 0;
 
       const onHud = (partial: Partial<GameHudState>) => {
+        sessionHud = { ...sessionHud, ...partial };
         if (partial.killFeed) killFeed = partial.killFeed;
         if (partial.hitMarker !== undefined && partial.hitMarker > 0) {
           hitMarkerT = Math.max(hitMarkerT, partial.hitMarker);
@@ -123,6 +128,7 @@ export default function GameScene({ onExit, mode }: Props) {
         enemySpawnPoints: world.enemySpawnPoints,
         onHud,
         onPlayerDamage: (amount, fromWorld) => {
+          if (sessionEnded) return;
           playerRef.current?.takeDamage(amount, fromWorld);
           audio.playHurt();
         },
@@ -158,6 +164,20 @@ export default function GameScene({ onExit, mode }: Props) {
         },
         onInteract: (origin, direction) => {
           world.interact(origin, direction);
+        },
+        onDeath: () => {
+          if (sessionEnded) return;
+          sessionEnded = true;
+          document.exitPointerLock?.();
+          playerRef.current?.releaseTouch();
+          audio.setAmbient(false);
+          onHud({ health: 0, locked: false, gameOver: true });
+          trackGoogleEvent("game_over", {
+            level: sessionHud.level,
+            score: sessionHud.score,
+            kills: sessionHud.kills,
+            training_mode: mode,
+          });
         },
         onReloadStart: () => audio.playReload(),
         onFootstep: () => audio.playFootstep(),
@@ -222,6 +242,7 @@ export default function GameScene({ onExit, mode }: Props) {
         hitMarkerKill: false,
         hitMarkerHeadshot: false,
         damageIndicators: [],
+        gameOver: false,
       });
 
       const onResize = () => gfx.resize();
@@ -239,7 +260,7 @@ export default function GameScene({ onExit, mode }: Props) {
         clock.update(timestamp);
         const dt = Math.min(clock.getDelta(), 0.05);
         const elapsed = clock.getElapsed();
-        const isPlaying = player.isLocked();
+        const isPlaying = !sessionEnded && player.isLocked();
 
         if (isPlaying !== lastLockState) {
           // Keep post-FX off during live play — biggest FPS win on integrated GPUs.
@@ -260,7 +281,7 @@ export default function GameScene({ onExit, mode }: Props) {
           player.update(dt);
           combat.update(dt, playerPos);
         } else {
-          player.update(0);
+          if (!sessionEnded) player.update(0);
           pausedRenderTime += dt;
           if (pausedRenderTime < 0.05) {
             raf = requestAnimationFrame(tick);
@@ -364,6 +385,36 @@ export default function GameScene({ onExit, mode }: Props) {
     onExit();
   }, [hud.kills, hud.level, hud.score, mode, onExit]);
 
+  const releaseSessionInput = useCallback(() => {
+    document.exitPointerLock?.();
+    playerRef.current?.releaseTouch();
+    audioRef.current?.setAmbient(false);
+  }, []);
+
+  const handleRetry = useCallback(() => {
+    trackGoogleEvent("game_retry", {
+      level: hud.level,
+      score: hud.score,
+      kills: hud.kills,
+      training_mode: mode,
+    });
+    releaseSessionInput();
+    onRetry();
+  }, [hud.kills, hud.level, hud.score, mode, onRetry, releaseSessionInput]);
+
+  const handleSwitchMode = useCallback(
+    (nextMode: TrainingMode) => {
+      trackGoogleEvent("game_switch_mode", {
+        from_mode: mode,
+        to_mode: nextMode,
+        score: hud.score,
+      });
+      releaseSessionInput();
+      onSwitchMode(nextMode);
+    },
+    [hud.score, mode, onSwitchMode, releaseSessionInput],
+  );
+
   const handlePause = useCallback(() => {
     playerRef.current?.releaseTouch();
   }, []);
@@ -408,10 +459,12 @@ export default function GameScene({ onExit, mode }: Props) {
             state={hud}
             onExit={handleExit}
             onEngage={handleEngage}
+            onRetry={handleRetry}
+            onSwitchMode={handleSwitchMode}
             mode={mode}
             touch={touchMode}
           />
-          {touchMode && hud.ready && hud.locked && (
+          {touchMode && hud.ready && hud.locked && !hud.gameOver && (
             <TouchControls
               onMove={touchMove}
               onLook={touchLook}
