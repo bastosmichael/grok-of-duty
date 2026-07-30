@@ -53,4 +53,58 @@ describe("level enemy waves", () => {
       system.dispose();
     }
   });
+
+  test("creates the restored full legacy-range squad", () => {
+    const scene = new THREE.Scene();
+    const profile = createLevelProfile(1, () => 0, "range");
+    const system = createEnemySystem(scene, {
+      count: profile.fighterCount,
+      baseHp: profile.enemyHp,
+      baseSpeed: profile.enemySpeed,
+      damageScale: profile.enemyDamageScale,
+      fireCooldownScale: profile.enemyFireCooldownScale,
+      accuracy: profile.enemyAccuracy,
+      maxConcurrentAttackers: profile.concurrentAttackers,
+      arenaHalfSize: profile.arenaHalfSize,
+      playerClearRadius: profile.playerClearRadius,
+      respawn: false,
+      colliders: [],
+      onPlayerDamage: () => {},
+    });
+
+    try {
+      expect(system.getEnemies()).toHaveLength(10);
+      expect(system.getEnemies().every((enemy) => enemy.alive)).toBe(true);
+    } finally {
+      system.dispose();
+    }
+  });
+
+  test("uses playable street candidates instead of spawning contacts beyond the alley", () => {
+    const scene = new THREE.Scene();
+    const spawnPoints = [
+      new THREE.Vector3(-2, 0, -8),
+      new THREE.Vector3(0, 0, -10),
+      new THREE.Vector3(2, 0, -12),
+    ];
+    const system = createEnemySystem(scene, {
+      count: 3,
+      arenaHalfSize: 20,
+      playerClearRadius: 4,
+      respawn: false,
+      colliders: [],
+      spawnPoints,
+      onPlayerDamage: () => {},
+    });
+
+    try {
+      const authored = new Set(spawnPoints.map((point) => `${point.x},${point.z}`));
+      expect(system.getEnemies()).toHaveLength(3);
+      for (const enemy of system.getEnemies()) {
+        expect(authored.has(`${enemy.mesh.position.x},${enemy.mesh.position.z}`)).toBe(true);
+      }
+    } finally {
+      system.dispose();
+    }
+  });
 });

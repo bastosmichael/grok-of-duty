@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import type { TrainingMode } from "@/game/modes";
 import type { Collider, GameHudState, KillFeedEntry, LevelState } from "@/game/types";
 import { raycastColliders } from "@/game/player/physics";
 import { createEnemySystem } from "./enemies";
@@ -30,10 +31,13 @@ export type CreateCombatOpts = {
   onPlayerDamage: (amount: number, fromWorld?: THREE.Vector3) => void;
   playHitSound?: () => void;
   playKillSound?: () => void;
-  onLevelStart?: (level: number) => void;
+  onLevelStart?: (level: number, fighterCount: number) => void;
   onLevelComplete?: (level: number) => void;
+  mode?: TrainingMode;
   /** World solid colliders for bullet occlusion / wall impacts. */
   colliders?: Collider[];
+  /** Playable road/room candidates supplied by a streaming world. */
+  enemySpawnPoints?: readonly THREE.Vector3[];
 };
 
 export type CombatSystem = {
@@ -56,7 +60,9 @@ export function createCombat(opts: CreateCombatOpts): CombatSystem {
     playKillSound,
     onLevelStart,
     onLevelComplete,
+    mode = "alley",
     colliders = [],
+    enemySpawnPoints = [],
   } = opts;
 
   const effects = createEffects(scene);
@@ -87,7 +93,7 @@ export function createCombat(opts: CreateCombatOpts): CombatSystem {
   let transitionTimer = 0;
   let introTimer = 0;
   const lastPlayerPosition = new THREE.Vector3();
-  let currentProfile: LevelProfile = createLevelProfile(levelNumber);
+  let currentProfile: LevelProfile = createLevelProfile(levelNumber, Math.random, mode);
   let currentArena: LevelArena = createLevelArena(
     scene,
     colliders,
@@ -114,6 +120,7 @@ export function createCombat(opts: CreateCombatOpts): CombatSystem {
       respawn: false,
       playerSpawn: playerPosition,
       colliders,
+      spawnPoints: enemySpawnPoints,
       onEnemyShot: (origin, end, hit, impactNormal) => {
         effects.spawnTracer(origin, end, hit ? 0xff563c : 0xffb05a);
         effects.spawnMuzzleSmoke(origin, _enemyForward.copy(end).sub(origin).normalize());
@@ -166,7 +173,7 @@ export function createCombat(opts: CreateCombatOpts): CombatSystem {
 
     levelNumber += 1;
     levelKills = 0;
-    currentProfile = createLevelProfile(levelNumber);
+    currentProfile = createLevelProfile(levelNumber, Math.random, mode);
     currentArena = createLevelArena(
       scene,
       colliders,
@@ -180,7 +187,7 @@ export function createCombat(opts: CreateCombatOpts): CombatSystem {
     transitionTimer = 0;
     pushKillFeed(`LEVEL ${levelNumber.toString().padStart(2, "0")}  //  INCOMING`);
     publishLevelHud();
-    onLevelStart?.(levelNumber);
+    onLevelStart?.(levelNumber, currentProfile.fighterCount);
   };
 
   const enemyName = (id: number): string => fighterNames.get(id) ?? `Unknown-${id}`;

@@ -1,4 +1,5 @@
 import type { KeyboardEvent } from "react";
+import type { TrainingMode } from "@/game/modes";
 import type { DamageIndicator, GameHudState } from "@/game/types";
 import AdSlot from "@/components/AdSlot";
 import { AD_SLOTS } from "@/lib/google-services";
@@ -7,6 +8,7 @@ interface GameHUDProps {
   state: GameHudState;
   onExit: () => void;
   onEngage: () => void;
+  mode: TrainingMode;
   /** Touch device: swap pointer-lock copy for on-screen control copy. */
   touch?: boolean;
 }
@@ -206,7 +208,7 @@ function Key({ children }: { children: string }) {
   );
 }
 
-export function GameHUD({ state, onExit, onEngage, touch = false }: GameHUDProps) {
+export function GameHUD({ state, onExit, onEngage, mode, touch = false }: GameHUDProps) {
   const {
     health,
     maxHealth,
@@ -564,9 +566,9 @@ export function GameHUD({ state, onExit, onEngage, touch = false }: GameHUDProps
                   {isResume ? "Return to fight" : "Weapons free"}
                 </h2>
                 <p className="mt-4 max-w-sm font-mono text-[11px] uppercase leading-relaxed tracking-[.11em] text-white/65">
-                  Level one begins in a compact arena against one fighter. Every secured level
-                  gently expands the AO, generates new cover, and adds one operator. Enemy aim,
-                  speed, and fire lanes rise gradually so every round remains learnable.
+                  {mode === "range"
+                    ? "The original training compound is back online with a full ten-contact squad. Only two operators can hold active fire lanes at first, keeping the dense drill readable while later waves increase pressure."
+                    : "Level one begins in the enclosed alley against one fighter. Every secured level generates new cover and adds one operator. Enemy aim, speed, and fire lanes rise gradually so every round remains learnable."}
                 </p>
 
                 <dl className="mt-7 grid grid-cols-3 gap-px bg-white/10">

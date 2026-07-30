@@ -61,6 +61,20 @@ describe("progressive procedural levels", () => {
     expect(twentieth.enemyHp).toBeLessThanOrEqual(56);
   });
 
+  test("restores a full squad in the legacy range without opening every fire lane", () => {
+    const first = createLevelProfile(1, () => 0, "range");
+    const seventh = createLevelProfile(7, () => 0, "range");
+
+    expect(first.fighterCount).toBe(10);
+    expect(first.codename).toStartWith("RANGE ");
+    expect(first.arenaHalfSize).toBe(46);
+    expect(first.concurrentAttackers).toBe(2);
+    expect(first.enemyDamageScale).toBeLessThan(0.3);
+    expect(first.enemyAccuracy).toBeLessThan(0.25);
+    expect(seventh.fighterCount).toBe(13);
+    expect(seventh.concurrentAttackers).toBe(3);
+  });
+
   test("generates deterministic random codenames and fighter callsigns", () => {
     const profileA = createLevelProfile(4, seededRandom(123));
     const profileB = createLevelProfile(4, seededRandom(123));

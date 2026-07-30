@@ -6,14 +6,16 @@ import { createPlayer } from "@/game/player";
 import { createCombat } from "@/game/combat";
 import { createAudio } from "@/game/audio";
 import { GameHUD, LoadingScreen, TouchControls } from "@/game/ui";
+import type { TrainingMode } from "@/game/modes";
 import { DEFAULT_HUD, type GameHudState, type KillFeedEntry } from "@/game/types";
 import { trackGoogleEvent } from "@/lib/google-services";
 
 interface Props {
   onExit: () => void;
+  mode: TrainingMode;
 }
 
-export default function GameScene({ onExit }: Props) {
+export default function GameScene({ onExit, mode }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const [hud, setHud] = useState<GameHudState>({ ...DEFAULT_HUD });
   const playerRef = useRef<ReturnType<typeof createPlayer> | null>(null);
@@ -78,9 +80,12 @@ export default function GameScene({ onExit }: Props) {
       await yieldFrame();
       if (disposed) return;
 
-      const world = createWorld(gfx.scene);
+      const world = createWorld(gfx.scene, mode);
       disposers.push(() => world.dispose());
-      setLoad(0.48, "Streaming city districts…");
+      setLoad(
+        0.48,
+        mode === "alley" ? "Streaming enclosed city districts…" : "Restoring legacy compound…",
+      );
       await yieldFrame();
       if (disposed) return;
 
@@ -108,9 +113,11 @@ export default function GameScene({ onExit }: Props) {
       };
 
       const combat = createCombat({
+        mode,
         scene: gfx.scene,
         camera: gfx.camera,
         colliders: world.colliders,
+        enemySpawnPoints: world.enemySpawnPoints,
         onHud,
         onPlayerDamage: (amount, fromWorld) => {
           playerRef.current?.takeDamage(amount, fromWorld);
@@ -118,16 +125,18 @@ export default function GameScene({ onExit }: Props) {
         },
         playHitSound: () => audio.playHit(),
         playKillSound: () => audio.playKill(),
-        onLevelStart: (level) => {
+        onLevelStart: (level, fighterCount) => {
           // A small between-level recovery keeps early progression welcoming
           // without erasing the pressure of later, denser encounters.
           playerRef.current?.heal(Math.min(30, 16 + level * 2));
           trackGoogleEvent("level_start", {
             level,
-            fighter_count: level,
+            fighter_count: fighterCount,
+            training_mode: mode,
           });
         },
-        onLevelComplete: (level) => trackGoogleEvent("level_complete", { level }),
+        onLevelComplete: (level) =>
+          trackGoogleEvent("level_complete", { level, training_mode: mode }),
       });
       disposers.push(() => combat.dispose());
       setLoad(0.72, "Spawning hostiles…");
@@ -158,35 +167,31 @@ export default function GameScene({ onExit }: Props) {
       await yieldFrame();
       if (disposed) return;
 
-      // Raise texture anisotropy to GPU max (capped) once renderer exists
-      const maxAniso = Math.min(8, gfx.renderer.capabilities.getMaxAnisotropy());
+      // Modest anisotropy only (4) — high values thrash GPU bandwidth
+      const maxAniso = Math.min(4, gfx.renderer.capabilities.getMaxAnisotropy());
       gfx.scene.traverse((obj) => {
         const mesh = obj as THREE.Mesh;
         if (!mesh.isMesh) return;
+        mesh.frustumCulled = true;
         const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
         for (const m of mats) {
           const std = m as THREE.MeshStandardMaterial;
           if (!std.isMaterial) continue;
-          for (const key of [
-            "map",
-            "normalMap",
-            "roughnessMap",
-            "metalnessMap",
-            "aoMap",
-          ] as const) {
+          for (const key of ["map", "normalMap", "roughnessMap"] as const) {
             const tex = std[key as keyof THREE.MeshStandardMaterial] as
               THREE.Texture | null | undefined;
             if (tex && "anisotropy" in tex) {
               tex.anisotropy = maxAniso;
-              tex.needsUpdate = true;
             }
           }
         }
       });
 
       // Warm one render so shaders compile before "ready"
-      lights.update(0.016, 0);
-      world.update(0.016, 0);
+      const spawnPos = player.getPosition();
+      lights.update(0.016, 0, spawnPos);
+      world.update(0.016, 0, spawnPos);
+      gfx.setUsePost(false);
       gfx.render();
       setLoad(0.97, "Authorizing deployment…");
       await yieldFrame();
@@ -231,7 +236,9 @@ export default function GameScene({ onExit }: Props) {
         const isPlaying = player.isLocked();
 
         if (isPlaying !== lastLockState) {
-          gfx.setUsePost(isPlaying);
+          // Keep post-FX off during live play — biggest FPS win on integrated GPUs.
+          // Briefing can stay light; combat needs every millisecond.
+          gfx.setUsePost(false);
           audio.setAmbient(isPlaying);
           lastLockState = isPlaying;
         }
@@ -320,7 +327,7 @@ export default function GameScene({ onExit }: Props) {
       audioRef.current = null;
       gfxRef.current = null;
     };
-  }, [mergeHud]);
+  }, [mergeHud, mode]);
 
   const handleEngage = useCallback(() => {
     // Pointer lock must be requested synchronously inside the trusted click.
@@ -334,20 +341,22 @@ export default function GameScene({ onExit }: Props) {
     trackGoogleEvent("game_engage", {
       level: hud.level,
       resumed: hud.level > 1 || hud.score > 0,
+      training_mode: mode,
     });
-  }, [hud.level, hud.score]);
+  }, [hud.level, hud.score, mode]);
 
   const handleExit = useCallback(() => {
     trackGoogleEvent("game_exit", {
       level: hud.level,
       score: hud.score,
       kills: hud.kills,
+      training_mode: mode,
     });
     document.exitPointerLock?.();
     playerRef.current?.releaseTouch();
     audioRef.current?.setAmbient(false);
     onExit();
-  }, [hud.kills, hud.level, hud.score, onExit]);
+  }, [hud.kills, hud.level, hud.score, mode, onExit]);
 
   const handlePause = useCallback(() => {
     playerRef.current?.releaseTouch();
@@ -386,7 +395,13 @@ export default function GameScene({ onExit }: Props) {
         <LoadingScreen progress={hud.loadProgress} label={hud.loadLabel} />
       ) : (
         <>
-          <GameHUD state={hud} onExit={handleExit} onEngage={handleEngage} touch={touchMode} />
+          <GameHUD
+            state={hud}
+            onExit={handleExit}
+            onEngage={handleEngage}
+            mode={mode}
+            touch={touchMode}
+          />
           {touchMode && hud.ready && hud.locked && (
             <TouchControls
               onMove={touchMove}

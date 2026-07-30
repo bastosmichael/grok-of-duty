@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import type { TrainingMode } from "@/game/modes";
 import type { Collider, LevelState } from "@/game/types";
 
 const LEVEL_ADJECTIVES = [
@@ -85,6 +86,7 @@ function pick<T>(values: readonly T[], random: () => number): T {
 export function createLevelProfile(
   level: number,
   random: () => number = Math.random,
+  mode: TrainingMode = "alley",
 ): LevelProfile {
   const safeLevel = Math.max(1, Math.floor(level));
   const tier = safeLevel - 1;
@@ -95,7 +97,7 @@ export function createLevelProfile(
   const concurrentAttackers =
     safeLevel < 9 ? 1 : safeLevel < 17 ? 2 : safeLevel < 29 ? 3 : safeLevel < 45 ? 4 : 5;
 
-  return {
+  const alleyProfile: LevelProfile = {
     level: safeLevel,
     codename: `${pick(LEVEL_ADJECTIVES, random)} ${pick(LEVEL_NOUNS, random)}`.toUpperCase(),
     // The central promise of the mode: every level adds exactly one fighter.
@@ -112,6 +114,24 @@ export function createLevelProfile(
     // lanes unlock in wide bands while the remaining squad repositions.
     concurrentAttackers,
     playerClearRadius: Math.min(10, 7.5 + tier * 0.1),
+  };
+
+  if (mode === "alley") return alleyProfile;
+
+  return {
+    ...alleyProfile,
+    codename: `RANGE ${pick(LEVEL_NOUNS, random)}`.toUpperCase(),
+    // The restored compound is the dense-contact option: a complete squad is
+    // present from the first drill, while active fire lanes remain capped.
+    fighterCount: Math.min(18, 10 + Math.floor(tier / 2)),
+    arenaHalfSize: 46,
+    coverCount: Math.min(5, 1 + Math.floor(tier / 5)),
+    enemySpeed: Math.min(3.05, 2.45 + tier * 0.018),
+    enemyDamageScale: Math.min(0.52, 0.24 + tier * 0.006),
+    enemyFireCooldownScale: Math.max(1.6, 2.45 - tier * 0.016),
+    enemyAccuracy: Math.min(0.42, 0.2 + tier * 0.004),
+    concurrentAttackers: safeLevel < 7 ? 2 : safeLevel < 16 ? 3 : 4,
+    playerClearRadius: 9,
   };
 }
 

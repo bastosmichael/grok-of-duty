@@ -11,6 +11,7 @@ import {
 } from "./enemyModel";
 import {
   clampEnemyImpulse,
+  canEnemyOccupy,
   dampEnemyYaw,
   ENEMY_BODY,
   findEnemySpawn,
@@ -64,6 +65,8 @@ export type EnemySystemOpts = {
   playerSpawn?: THREE.Vector3;
   /** World solids used for spawn safety, movement, and line-of-sight. */
   colliders?: Collider[];
+  /** Authored playable insertion points, such as road centers in a streamed city. */
+  spawnPoints?: readonly THREE.Vector3[];
   /** Cosmetic enemy tracer callback. `hit` means the shot damaged the player. */
   onEnemyShot?: (
     origin: THREE.Vector3,
@@ -123,7 +126,33 @@ function randomSpawnPosition(
   occupied: readonly THREE.Vector3[],
   playerClearRadius: number,
   arenaHalfSize: number,
+  spawnPoints: readonly THREE.Vector3[],
 ): THREE.Vector3 {
+  if (spawnPoints.length > 0) {
+    const start = Math.floor(Math.random() * spawnPoints.length);
+    const playerClearSq = playerClearRadius * playerClearRadius;
+    const spacingSq = (ENEMY_BODY.minimumSpacing * 1.35) ** 2;
+
+    for (let offset = 0; offset < spawnPoints.length; offset++) {
+      const point = spawnPoints[(start + offset) % spawnPoints.length]!;
+      out.set(point.x, ENEMY_BODY.groundY, point.z);
+      const dx = out.x - playerSpawn.x;
+      const dz = out.z - playerSpawn.z;
+      if (dx * dx + dz * dz < playerClearSq) continue;
+      if (!canEnemyOccupy(out, colliders, arenaHalfSize)) continue;
+      if (
+        occupied.some((other) => {
+          const ox = out.x - other.x;
+          const oz = out.z - other.z;
+          return ox * ox + oz * oz < spacingSq;
+        })
+      ) {
+        continue;
+      }
+      return out;
+    }
+  }
+
   return findEnemySpawn(
     playerSpawn,
     out,
@@ -144,6 +173,7 @@ function createEnemyRuntime(
   baseSpeed: number,
   playerClearRadius: number,
   arenaHalfSize: number,
+  spawnPoints: readonly THREE.Vector3[],
 ): EnemyRuntime {
   const variant = nextEnemyId;
   const model = createEnemyModel(variant);
@@ -155,6 +185,7 @@ function createEnemyRuntime(
     occupied,
     playerClearRadius,
     arenaHalfSize,
+    spawnPoints,
   );
   group.position.copy(pos);
   group.rotation.set(0, Math.random() * Math.PI * 2, 0);
@@ -227,6 +258,7 @@ function respawnEnemy(
   occupied: readonly THREE.Vector3[],
   playerClearRadius: number,
   arenaHalfSize: number,
+  spawnPoints: readonly THREE.Vector3[],
 ): void {
   e.alive = true;
   e.collapsing = false;
@@ -254,6 +286,7 @@ function respawnEnemy(
     occupied,
     playerClearRadius,
     arenaHalfSize,
+    spawnPoints,
   );
   e.mesh.position.y = ENEMY_BODY.groundY;
   resetEnemyModelPose(e.model.rig);
@@ -280,6 +313,7 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
   const allowRespawn = opts.respawn ?? true;
   const playerSpawn = (opts.playerSpawn ?? new THREE.Vector3(0, 0, 0)).clone();
   const colliders = opts.colliders ?? [];
+  const spawnPoints = opts.spawnPoints ?? [];
   const enemies: EnemyRuntime[] = [];
   const byId = new Map<number, EnemyRuntime>();
 
@@ -294,6 +328,7 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
       baseSpeed,
       playerClearRadius,
       arenaHalfSize,
+      spawnPoints,
     );
     // Once a wave goes active, contacts have time to move and shoulder their
     // rifles before the first shot instead of dealing frame-one damage.
@@ -346,6 +381,7 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
               occupiedPositions,
               playerClearRadius,
               arenaHalfSize,
+              spawnPoints,
             );
           }
         }

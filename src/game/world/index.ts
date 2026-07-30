@@ -1,4 +1,5 @@
 export { createWorld, type WorldApi } from "./createWorld";
+export { createLegacyRange } from "./legacyRange";
 export { createCityStream, CITY_CHUNK, setCityLampFactor } from "./cityStream";
 export { sampleDayNight, DAY_NIGHT_PERIOD_SEC, type DayNightSample } from "./dayNight";
 export {
