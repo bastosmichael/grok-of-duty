@@ -71,25 +71,27 @@ export function createLighting(scene: THREE.Scene, renderer: THREE.WebGLRenderer
   sun.position.set(40, 60, -20);
   sun.target.position.set(0, 0, 0);
   sun.castShadow = true;
-  sun.shadow.intensity = 0.55;
-  sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.near = 2;
-  sun.shadow.camera.far = 160;
-  sun.shadow.camera.left = -55;
-  sun.shadow.camera.right = 55;
-  sun.shadow.camera.top = 55;
-  sun.shadow.camera.bottom = -55;
+  sun.shadow.intensity = 0.4;
+  // 1024 is a large browser win vs 2048; still readable on street scale
+  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.camera.near = 4;
+  sun.shadow.camera.far = 100;
+  sun.shadow.camera.left = -36;
+  sun.shadow.camera.right = 36;
+  sun.shadow.camera.top = 36;
+  sun.shadow.camera.bottom = -36;
   sun.shadow.camera.updateProjectionMatrix();
-  sun.shadow.bias = -0.00025;
-  sun.shadow.normalBias = 0.025;
-  sun.shadow.radius = 2.0;
+  sun.shadow.bias = -0.0003;
+  sun.shadow.normalBias = 0.03;
+  sun.shadow.radius = 1;
   scene.add(sun);
   scene.add(sun.target);
 
-  // Soft fill opposite the sun (bounce / ambient occlusion lift)
+  // Soft fill opposite the sun (no shadow — free fill)
   const bounce = new THREE.DirectionalLight(0x88aacc, 0.35);
   bounce.name = "SkyBounce";
   bounce.position.set(-20, 25, 30);
+  bounce.castShadow = false;
   scene.add(bounce);
 
   const dayEnv = createDayEnv(renderer);
@@ -100,11 +102,14 @@ export function createLighting(scene: THREE.Scene, renderer: THREE.WebGLRenderer
   let lastSample = sampleDayNight(0);
   const tmpColor = new THREE.Color();
   const playerFollow = new THREE.Vector3();
+  let lastLampFactor = -1;
+  let lastSkyOpacity = -1;
+  let sampleAccum = 0;
 
   // Start daytime so first load is bright streets
   const dayOffset = DAY_NIGHT_PERIOD_SEC * 0.22; // near noon
 
-  const applySample = (s: DayNightSample, playerPos?: THREE.Vector3): void => {
+  const applySample = (s: DayNightSample, playerPos?: THREE.Vector3, force = false): void => {
     lastSample = s;
     hemi.color.setHex(s.hemiSky);
     hemi.groundColor.setHex(s.hemiGround);
@@ -119,7 +124,8 @@ export function createLighting(scene: THREE.Scene, renderer: THREE.WebGLRenderer
 
     if (scene.fog && scene.fog instanceof THREE.FogExp2) {
       scene.fog.color.setHex(s.fogColor);
-      scene.fog.density = s.fogDensity;
+      // Slightly denser than authored sample for cheaper far-field draws
+      scene.fog.density = Math.max(s.fogDensity, 0.0035);
     }
     if (scene.background instanceof THREE.Color) {
       scene.background.setHex(s.skyColor);
@@ -129,42 +135,55 @@ export function createLighting(scene: THREE.Scene, renderer: THREE.WebGLRenderer
 
     // Sun orbit relative to player so shadows stay useful while streaming
     const focus = playerPos ?? playerFollow;
-    const dist = 70;
+    const dist = 55;
     const elev = Math.max(0.08, 0.15 + s.dayFactor * 1.1);
     const y = Math.sin(elev) * dist;
     const r = Math.cos(elev) * dist;
     sun.position.set(focus.x + Math.cos(s.sunAzimuth) * r, y, focus.z + Math.sin(s.sunAzimuth) * r);
     sun.target.position.set(focus.x, 0, focus.z);
     sun.target.updateMatrixWorld();
-    sun.shadow.camera.updateMatrixWorld();
 
-    setCityLampFactor(scene, s.lampFactor);
+    if (force || Math.abs(s.lampFactor - lastLampFactor) > 0.02) {
+      lastLampFactor = s.lampFactor;
+      setCityLampFactor(scene, s.lampFactor);
+    }
 
-    // Fade stars / moon with day
-    const sky = scene.getObjectByName("SkyDome");
-    if (sky) {
-      sky.traverse((obj) => {
-        const pts = obj as THREE.Points;
-        if (pts.isPoints && pts.material) {
-          const mat = pts.material as THREE.PointsMaterial;
-          mat.opacity = s.starOpacity;
-          mat.transparent = true;
-          mat.visible = s.starOpacity > 0.02;
-        }
-        const mesh = obj as THREE.Mesh;
-        if (mesh.isMesh && mesh.name === "MoonDisc") {
-          mesh.visible = s.starOpacity > 0.15;
-        }
-      });
+    // Stars/moon only when opacity band changes
+    if (force || Math.abs(s.starOpacity - lastSkyOpacity) > 0.05) {
+      lastSkyOpacity = s.starOpacity;
+      const sky = scene.getObjectByName("SkyDome");
+      if (sky) {
+        sky.traverse((obj) => {
+          const pts = obj as THREE.Points;
+          if (pts.isPoints && pts.material) {
+            const mat = pts.material as THREE.PointsMaterial;
+            mat.opacity = s.starOpacity;
+            mat.transparent = true;
+            mat.visible = s.starOpacity > 0.02;
+          }
+          const mesh = obj as THREE.Mesh;
+          if (mesh.isMesh && mesh.name === "MoonDisc") {
+            mesh.visible = s.starOpacity > 0.15;
+          }
+        });
+      }
     }
   };
 
-  applySample(sampleDayNight(dayOffset));
+  applySample(sampleDayNight(dayOffset), undefined, true);
 
-  const update = (_dt: number, elapsed: number, playerPos?: THREE.Vector3): void => {
+  const update = (dt: number, elapsed: number, playerPos?: THREE.Vector3): void => {
     if (playerPos) playerFollow.copy(playerPos);
-    const s = sampleDayNight(elapsed + dayOffset);
-    applySample(s, playerFollow);
+    // Throttle full day/night re-tint; still move sun target every frame lightly
+    sampleAccum += dt;
+    if (sampleAccum >= 0.2) {
+      sampleAccum = 0;
+      applySample(sampleDayNight(elapsed + dayOffset), playerFollow);
+    } else if (playerPos) {
+      // Cheap shadow follow without full color recompute
+      sun.target.position.set(playerFollow.x, 0, playerFollow.z);
+      sun.target.updateMatrixWorld();
+    }
   };
 
   const dispose = (): void => {

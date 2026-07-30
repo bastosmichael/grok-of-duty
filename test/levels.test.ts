@@ -16,27 +16,26 @@ function seededRandom(seed: number): () => number {
 }
 
 describe("progressive procedural levels", () => {
-  test("starts with one approachable fighter and adds exactly one per level", () => {
+  test("starts with a visible patrol and adds two contacts per level", () => {
     const profiles = Array.from({ length: 10 }, (_, index) =>
       createLevelProfile(index + 1, seededRandom(index + 20)),
     );
 
     for (let index = 0; index < profiles.length; index++) {
-      expect(profiles[index]!.fighterCount).toBe(index + 1);
+      expect(profiles[index]!.fighterCount).toBe(6 + index * 2);
     }
 
     const first = profiles[0]!;
     const late = profiles[9]!;
-    // Street pursuit bounds — large enough for corridors, not a sealed box
-    expect(first.arenaHalfSize).toBeGreaterThanOrEqual(48);
-    expect(first.arenaHalfSize).toBeLessThan(52);
+    // Streaming pursuit stays grounded far beyond the original spawn block.
+    expect(first.arenaHalfSize).toBe(4096);
     expect(first.enemyDamageScale).toBeLessThan(0.6);
     expect(first.enemySpeed).toBeLessThan(2.7);
     expect(first.enemyHp).toBeLessThanOrEqual(50);
     expect(first.concurrentAttackers).toBe(1);
     expect(profiles[7]!.concurrentAttackers).toBe(1);
     expect(profiles[8]!.concurrentAttackers).toBe(2);
-    expect(late.arenaHalfSize).toBeGreaterThan(first.arenaHalfSize);
+    expect(late.arenaHalfSize).toBe(first.arenaHalfSize);
     expect(late.enemySpeed).toBeGreaterThan(first.enemySpeed);
     expect(late.enemyHp).toBeGreaterThan(first.enemyHp);
     expect(late.enemyAccuracy).toBeGreaterThan(first.enemyAccuracy);
@@ -59,6 +58,20 @@ describe("progressive procedural levels", () => {
     expect(twentieth.concurrentAttackers).toBe(3);
     expect(twentieth.enemyFireCooldownScale).toBeGreaterThan(1.95);
     expect(twentieth.enemyHp).toBeLessThanOrEqual(56);
+  });
+
+  test("restores a full squad in the legacy range without opening every fire lane", () => {
+    const first = createLevelProfile(1, () => 0, "range");
+    const seventh = createLevelProfile(7, () => 0, "range");
+
+    expect(first.fighterCount).toBe(10);
+    expect(first.codename).toStartWith("RANGE ");
+    expect(first.arenaHalfSize).toBe(46);
+    expect(first.concurrentAttackers).toBe(2);
+    expect(first.enemyDamageScale).toBeLessThan(0.3);
+    expect(first.enemyAccuracy).toBeLessThan(0.25);
+    expect(seventh.fighterCount).toBe(13);
+    expect(seventh.concurrentAttackers).toBe(3);
   });
 
   test("generates deterministic random codenames and fighter callsigns", () => {

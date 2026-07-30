@@ -6,14 +6,18 @@ import { createPlayer } from "@/game/player";
 import { createCombat } from "@/game/combat";
 import { createAudio } from "@/game/audio";
 import { GameHUD, LoadingScreen, TouchControls } from "@/game/ui";
+import type { TrainingMode } from "@/game/modes";
 import { DEFAULT_HUD, type GameHudState, type KillFeedEntry } from "@/game/types";
 import { trackGoogleEvent } from "@/lib/google-services";
 
 interface Props {
   onExit: () => void;
+  onRetry: () => void;
+  onSwitchMode: (mode: TrainingMode) => void;
+  mode: TrainingMode;
 }
 
-export default function GameScene({ onExit }: Props) {
+export default function GameScene({ onExit, onRetry, onSwitchMode, mode }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const [hud, setHud] = useState<GameHudState>({ ...DEFAULT_HUD });
   const playerRef = useRef<ReturnType<typeof createPlayer> | null>(null);
@@ -49,6 +53,8 @@ export default function GameScene({ onExit }: Props) {
     if (!mount) return;
 
     let disposed = false;
+    let sessionEnded = false;
+    let sessionHud: GameHudState = { ...DEFAULT_HUD };
     let raf = 0;
     const disposers: Array<() => void> = [];
 
@@ -78,9 +84,12 @@ export default function GameScene({ onExit }: Props) {
       await yieldFrame();
       if (disposed) return;
 
-      const world = createWorld(gfx.scene);
+      const world = createWorld(gfx.scene, mode);
       disposers.push(() => world.dispose());
-      setLoad(0.48, "Streaming city districts…");
+      setLoad(
+        0.48,
+        mode === "alley" ? "Streaming enclosed city districts…" : "Restoring legacy compound…",
+      );
       await yieldFrame();
       if (disposed) return;
 
@@ -96,6 +105,7 @@ export default function GameScene({ onExit }: Props) {
       let damageFlashT = 0;
 
       const onHud = (partial: Partial<GameHudState>) => {
+        sessionHud = { ...sessionHud, ...partial };
         if (partial.killFeed) killFeed = partial.killFeed;
         if (partial.hitMarker !== undefined && partial.hitMarker > 0) {
           hitMarkerT = Math.max(hitMarkerT, partial.hitMarker);
@@ -107,27 +117,38 @@ export default function GameScene({ onExit }: Props) {
         mergeHud(partial);
       };
 
+      // Scenario boundary: modes select only the world and difficulty profile.
+      // Player movement, weapons, hit detection, enemy AI, damage, and animation
+      // remain this single shared gameplay stack for both training scenarios.
       const combat = createCombat({
+        mode,
         scene: gfx.scene,
         camera: gfx.camera,
         colliders: world.colliders,
+        enemySpawnPoints: world.enemySpawnPoints,
+        getTraversalDistance: () => world.getTraversalDistance(),
+        getReinforcementSpawnPoints: (minimumDepth) =>
+          world.getReinforcementSpawnPoints(minimumDepth),
         onHud,
         onPlayerDamage: (amount, fromWorld) => {
+          if (sessionEnded) return;
           playerRef.current?.takeDamage(amount, fromWorld);
           audio.playHurt();
         },
         playHitSound: () => audio.playHit(),
         playKillSound: () => audio.playKill(),
-        onLevelStart: (level) => {
+        onLevelStart: (level, fighterCount) => {
           // A small between-level recovery keeps early progression welcoming
           // without erasing the pressure of later, denser encounters.
           playerRef.current?.heal(Math.min(30, 16 + level * 2));
           trackGoogleEvent("level_start", {
             level,
-            fighter_count: level,
+            fighter_count: fighterCount,
+            training_mode: mode,
           });
         },
-        onLevelComplete: (level) => trackGoogleEvent("level_complete", { level }),
+        onLevelComplete: (level) =>
+          trackGoogleEvent("level_complete", { level, training_mode: mode }),
       });
       disposers.push(() => combat.dispose());
       setLoad(0.72, "Spawning hostiles…");
@@ -144,6 +165,23 @@ export default function GameScene({ onExit }: Props) {
           combat.handleShot(origin, direction, ads);
           audio.playGunshot(ads);
         },
+        onInteract: (origin, direction) => {
+          world.interact(origin, direction);
+        },
+        onDeath: () => {
+          if (sessionEnded) return;
+          sessionEnded = true;
+          document.exitPointerLock?.();
+          playerRef.current?.releaseTouch();
+          audio.setAmbient(false);
+          onHud({ health: 0, locked: false, gameOver: true, interactionPrompt: null });
+          trackGoogleEvent("game_over", {
+            level: sessionHud.level,
+            score: sessionHud.score,
+            kills: sessionHud.kills,
+            training_mode: mode,
+          });
+        },
         onReloadStart: () => audio.playReload(),
         onFootstep: () => audio.playFootstep(),
         onEmpty: () => audio.playEmpty(),
@@ -158,35 +196,31 @@ export default function GameScene({ onExit }: Props) {
       await yieldFrame();
       if (disposed) return;
 
-      // Raise texture anisotropy to GPU max (capped) once renderer exists
-      const maxAniso = Math.min(8, gfx.renderer.capabilities.getMaxAnisotropy());
+      // Modest anisotropy only (4) — high values thrash GPU bandwidth
+      const maxAniso = Math.min(4, gfx.renderer.capabilities.getMaxAnisotropy());
       gfx.scene.traverse((obj) => {
         const mesh = obj as THREE.Mesh;
         if (!mesh.isMesh) return;
+        mesh.frustumCulled = true;
         const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
         for (const m of mats) {
           const std = m as THREE.MeshStandardMaterial;
           if (!std.isMaterial) continue;
-          for (const key of [
-            "map",
-            "normalMap",
-            "roughnessMap",
-            "metalnessMap",
-            "aoMap",
-          ] as const) {
+          for (const key of ["map", "normalMap", "roughnessMap"] as const) {
             const tex = std[key as keyof THREE.MeshStandardMaterial] as
               THREE.Texture | null | undefined;
             if (tex && "anisotropy" in tex) {
               tex.anisotropy = maxAniso;
-              tex.needsUpdate = true;
             }
           }
         }
       });
 
       // Warm one render so shaders compile before "ready"
-      lights.update(0.016, 0);
-      world.update(0.016, 0);
+      const spawnPos = player.getPosition();
+      lights.update(0.016, 0, spawnPos);
+      world.update(0.016, 0, spawnPos);
+      gfx.setUsePost(false);
       gfx.render();
       setLoad(0.97, "Authorizing deployment…");
       await yieldFrame();
@@ -211,6 +245,8 @@ export default function GameScene({ onExit }: Props) {
         hitMarkerKill: false,
         hitMarkerHeadshot: false,
         damageIndicators: [],
+        gameOver: false,
+        interactionPrompt: null,
       });
 
       const onResize = () => gfx.resize();
@@ -221,17 +257,22 @@ export default function GameScene({ onExit }: Props) {
       const clock = gfx.clock;
       clock.reset();
       let lastLockState: boolean | null = null;
+      let lastInteractionPrompt: string | null = null;
       let pausedRenderTime = 0;
+      const interactionOrigin = new THREE.Vector3();
+      const interactionDirection = new THREE.Vector3();
 
       const tick = (timestamp?: number) => {
         if (disposed) return;
         clock.update(timestamp);
         const dt = Math.min(clock.getDelta(), 0.05);
         const elapsed = clock.getElapsed();
-        const isPlaying = player.isLocked();
+        const isPlaying = !sessionEnded && player.isLocked();
 
         if (isPlaying !== lastLockState) {
-          gfx.setUsePost(isPlaying);
+          // Keep post-FX off during live play — biggest FPS win on integrated GPUs.
+          // Briefing can stay light; combat needs every millisecond.
+          gfx.setUsePost(false);
           audio.setAmbient(isPlaying);
           lastLockState = isPlaying;
         }
@@ -245,9 +286,23 @@ export default function GameScene({ onExit }: Props) {
           world.update(dt, elapsed, playerPos);
           lights.update(dt, elapsed, playerPos);
           player.update(dt);
+          gfx.camera.getWorldPosition(interactionOrigin);
+          gfx.camera.getWorldDirection(interactionDirection);
+          const interactionPrompt = world.getInteractionPrompt(
+            interactionOrigin,
+            interactionDirection,
+          );
+          if (interactionPrompt !== lastInteractionPrompt) {
+            lastInteractionPrompt = interactionPrompt;
+            onHud({ interactionPrompt });
+          }
           combat.update(dt, playerPos);
         } else {
-          player.update(0);
+          if (lastInteractionPrompt !== null) {
+            lastInteractionPrompt = null;
+            onHud({ interactionPrompt: null });
+          }
+          if (!sessionEnded) player.update(0);
           pausedRenderTime += dt;
           if (pausedRenderTime < 0.05) {
             raf = requestAnimationFrame(tick);
@@ -320,7 +375,7 @@ export default function GameScene({ onExit }: Props) {
       audioRef.current = null;
       gfxRef.current = null;
     };
-  }, [mergeHud]);
+  }, [mergeHud, mode]);
 
   const handleEngage = useCallback(() => {
     // Pointer lock must be requested synchronously inside the trusted click.
@@ -334,20 +389,52 @@ export default function GameScene({ onExit }: Props) {
     trackGoogleEvent("game_engage", {
       level: hud.level,
       resumed: hud.level > 1 || hud.score > 0,
+      training_mode: mode,
     });
-  }, [hud.level, hud.score]);
+  }, [hud.level, hud.score, mode]);
 
   const handleExit = useCallback(() => {
     trackGoogleEvent("game_exit", {
       level: hud.level,
       score: hud.score,
       kills: hud.kills,
+      training_mode: mode,
     });
     document.exitPointerLock?.();
     playerRef.current?.releaseTouch();
     audioRef.current?.setAmbient(false);
     onExit();
-  }, [hud.kills, hud.level, hud.score, onExit]);
+  }, [hud.kills, hud.level, hud.score, mode, onExit]);
+
+  const releaseSessionInput = useCallback(() => {
+    document.exitPointerLock?.();
+    playerRef.current?.releaseTouch();
+    audioRef.current?.setAmbient(false);
+  }, []);
+
+  const handleRetry = useCallback(() => {
+    trackGoogleEvent("game_retry", {
+      level: hud.level,
+      score: hud.score,
+      kills: hud.kills,
+      training_mode: mode,
+    });
+    releaseSessionInput();
+    onRetry();
+  }, [hud.kills, hud.level, hud.score, mode, onRetry, releaseSessionInput]);
+
+  const handleSwitchMode = useCallback(
+    (nextMode: TrainingMode) => {
+      trackGoogleEvent("game_switch_mode", {
+        from_mode: mode,
+        to_mode: nextMode,
+        score: hud.score,
+      });
+      releaseSessionInput();
+      onSwitchMode(nextMode);
+    },
+    [hud.score, mode, onSwitchMode, releaseSessionInput],
+  );
 
   const handlePause = useCallback(() => {
     playerRef.current?.releaseTouch();
@@ -374,6 +461,9 @@ export default function GameScene({ onExit }: Props) {
   const touchReload = useCallback(() => {
     playerRef.current?.touch.reload();
   }, []);
+  const touchInteract = useCallback(() => {
+    playerRef.current?.touch.interact();
+  }, []);
   const touchCrouch = useCallback(() => {
     playerRef.current?.touch.toggleCrouch();
   }, []);
@@ -386,8 +476,16 @@ export default function GameScene({ onExit }: Props) {
         <LoadingScreen progress={hud.loadProgress} label={hud.loadLabel} />
       ) : (
         <>
-          <GameHUD state={hud} onExit={handleExit} onEngage={handleEngage} touch={touchMode} />
-          {touchMode && hud.ready && hud.locked && (
+          <GameHUD
+            state={hud}
+            onExit={handleExit}
+            onEngage={handleEngage}
+            onRetry={handleRetry}
+            onSwitchMode={handleSwitchMode}
+            mode={mode}
+            touch={touchMode}
+          />
+          {touchMode && hud.ready && hud.locked && !hud.gameOver && (
             <TouchControls
               onMove={touchMove}
               onLook={touchLook}
@@ -396,6 +494,7 @@ export default function GameScene({ onExit }: Props) {
               onSprint={touchSprint}
               onJump={touchJump}
               onReload={touchReload}
+              onInteract={touchInteract}
               onCrouch={touchCrouch}
               onPause={handlePause}
             />

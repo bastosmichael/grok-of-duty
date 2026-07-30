@@ -8,6 +8,7 @@ interface TouchControlsProps {
   onSprint: (down: boolean) => void;
   onJump: () => void;
   onReload: () => void;
+  onInteract: () => void;
   onCrouch: () => void;
   onPause: () => void;
 }
@@ -64,6 +65,7 @@ export function TouchControls({
   onSprint,
   onJump,
   onReload,
+  onInteract,
   onCrouch,
   onPause,
 }: TouchControlsProps) {
@@ -170,6 +172,12 @@ export function TouchControls({
             sub="Reload"
             className="h-12 w-12 text-[11px]"
             onDown={onReload}
+          />
+          <ActionButton
+            label="USE"
+            sub="Open or close door"
+            className="h-12 w-12 text-[9px]"
+            onDown={onInteract}
           />
           <ActionButton
             label="ADS"

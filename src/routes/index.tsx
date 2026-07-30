@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { ClientOnly } from "@tanstack/react-router";
 import heroImg from "@/assets/hero.jpg";
 import AdSlot from "@/components/AdSlot";
+import { TRAINING_MODES, type TrainingMode } from "@/game/modes";
 import { AD_SLOTS } from "@/lib/google-services";
 
 const WebGLCube = lazy(() => import("@/components/WebGLCube"));
@@ -102,7 +103,15 @@ const features = [
 function Index() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [gameOpen, setGameOpen] = useState(false);
-  const launch = () => setGameOpen(true);
+  const [trainingMode, setTrainingMode] = useState<TrainingMode | null>(null);
+  const [gameSession, setGameSession] = useState(0);
+  const launch = () => setDialogOpen(true);
+  const deploy = (mode: TrainingMode) => {
+    setTrainingMode(mode);
+    setGameSession((session) => session + 1);
+    setDialogOpen(false);
+    setGameOpen(true);
+  };
 
   // Ads are unmounted while the scene is open; the body flag also hides any
   // AdSense anchor/vignette overlay that Google injects outside our tree.
@@ -366,48 +375,78 @@ function Index() {
         </div>
       </footer>
 
-      {/* Play Dialog */}
+      {/* Training mode selection */}
       {dialogOpen && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-background/85 backdrop-blur-sm p-4"
           onClick={() => setDialogOpen(false)}
         >
           <div
-            className="relative max-w-md border border-primary/50 bg-card p-8 shadow-[var(--shadow-elegant)]"
+            className="relative w-full max-w-3xl border border-primary/50 bg-card p-6 shadow-[var(--shadow-elegant)] sm:p-8"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="text-xs font-mono uppercase tracking-[0.3em] text-primary">
-              // TRANSMISSION
+              // SELECT TRAINING DEPLOYMENT
             </div>
             <h3 className="mt-3 font-[Orbitron] text-2xl font-black uppercase">
-              Servers Warming Up
+              Choose Your Drill
             </h3>
-            <p className="mt-4 text-sm text-muted-foreground">
-              Multiplayer servers are in closed alpha. Check the{" "}
-              <a
-                href="#roadmap"
-                onClick={() => setDialogOpen(false)}
-                className="text-primary underline underline-offset-4"
-              >
-                roadmap
-              </a>{" "}
-              for launch windows.
+            <p className="mt-3 text-sm text-muted-foreground">
+              Run the progressive alley operation or return to the original full-squad compound.
             </p>
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              {(
+                Object.entries(TRAINING_MODES) as Array<
+                  [TrainingMode, (typeof TRAINING_MODES)[TrainingMode]]
+                >
+              ).map(([mode, details]) => (
+                <button
+                  key={mode}
+                  onClick={() => deploy(mode)}
+                  className="group border border-border bg-background/70 p-5 text-left transition-colors hover:border-primary hover:bg-primary/5"
+                >
+                  <span className="font-mono text-[10px] uppercase tracking-[0.25em] text-primary">
+                    // {details.eyebrow}
+                  </span>
+                  <span className="mt-3 block font-[Orbitron] text-lg font-black uppercase text-foreground">
+                    {details.title}
+                  </span>
+                  <span className="mt-3 block text-sm leading-relaxed text-muted-foreground">
+                    {details.description}
+                  </span>
+                  <span className="mt-5 block text-xs font-bold uppercase tracking-widest text-primary">
+                    Deploy ▸
+                  </span>
+                </button>
+              ))}
+            </div>
             <button
               onClick={() => setDialogOpen(false)}
-              className="mt-6 w-full border border-primary py-3 text-xs font-bold uppercase tracking-widest text-primary hover:bg-primary hover:text-primary-foreground transition-colors clip-tactical"
+              className="mt-5 text-xs font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:text-foreground"
             >
-              Acknowledged
+              Cancel
             </button>
           </div>
         </div>
       )}
 
       {/* 3D Game Scene — only loads when user clicks a play button */}
-      {gameOpen && (
+      {gameOpen && trainingMode && (
         <ClientOnly fallback={<GameLoading />}>
           <Suspense fallback={<GameLoading />}>
-            <GameScene onExit={() => setGameOpen(false)} />
+            <GameScene
+              key={`${trainingMode}-${gameSession}`}
+              mode={trainingMode}
+              onRetry={() => setGameSession((session) => session + 1)}
+              onSwitchMode={(nextMode) => {
+                setTrainingMode(nextMode);
+                setGameSession((session) => session + 1);
+              }}
+              onExit={() => {
+                setGameOpen(false);
+                setTrainingMode(null);
+              }}
+            />
           </Suspense>
         </ClientOnly>
       )}

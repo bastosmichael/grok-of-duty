@@ -11,24 +11,50 @@ import {
   type PropResult,
   type WorldMaterials,
 } from "./props";
+import {
+  createInteractiveDoor,
+  getDoorInteractionPrompt,
+  interactWithNearestDoor,
+  type InteractiveDoor,
+  updateInteractiveDoor,
+} from "./doors";
 
 /** How far ahead (meters along graph) we keep streets generated. */
-const STREAM_AHEAD = 90;
+const STREAM_AHEAD = 105;
 /** How far behind the player streets are culled. */
-const STREAM_BEHIND = 70;
-/** Max active street segments in memory. */
-const MAX_SEGMENTS = 28;
+const STREAM_BEHIND = 60;
+/** Enough active branches to make long-distance traversal feel continuous. */
+const MAX_SEGMENTS = 18;
+/** Real GPU lights near the player only (emissive lamps everywhere else). */
+const MAX_DYNAMIC_LAMPS = 3;
 
 export type CityStreamApi = {
   colliders: Collider[];
+  /** Valid road-center candidates for enemy wave insertion. */
+  enemySpawnPoints: THREE.Vector3[];
   groundY: number;
   seed: number;
   starGroup: THREE.Group | null;
   update: (dt: number, elapsed: number, playerPos: THREE.Vector3) => void;
+  interact: (origin: THREE.Vector3, direction: THREE.Vector3) => boolean;
+  getInteractionPrompt: (origin: THREE.Vector3, direction: THREE.Vector3) => string | null;
+  getTraversalDistance: () => number;
+  getReinforcementSpawnPoints: (minimumDepth: number) => readonly THREE.Vector3[];
   dispose: () => void;
 };
 
 type JunctionKind = "straight" | "left" | "right" | "t" | "cross" | "end_with_lobby";
+
+type HorizonSeal = {
+  group: THREE.Group;
+  colliders: Collider[];
+};
+
+type EnemySpawnRecord = {
+  position: THREE.Vector3;
+  pathDepth: number;
+  segmentId: string;
+};
 
 type Segment = {
   id: string;
@@ -47,9 +73,15 @@ type Segment = {
   interiorR: boolean;
   group: THREE.Group;
   colliders: Collider[];
-  lamps: THREE.PointLight[];
+  doors: InteractiveDoor[];
+  /** Emissive lamp head world positions (no per-lamp PointLight). */
+  lampPositions: THREE.Vector3[];
   /** Child segment ids generated from the far end. */
   nextIds: string[];
+  /** A junction has been authored, even when its children are later culled. */
+  expanded: boolean;
+  /** Removable facade across the current streamed frontier. */
+  frontierSeal: HorizonSeal | null;
   /** Parent id (for culling direction). */
   parentId: string | null;
   /** Distance from spawn along the graph (approx). */
@@ -100,6 +132,69 @@ function addProp(group: THREE.Group, colliders: Collider[], prop: PropResult): v
   colliders.push(...prop.colliders);
 }
 
+function makeRotatedCollider(
+  position: THREE.Vector3,
+  yaw: number,
+  halfX: number,
+  halfY: number,
+  halfZ: number,
+): Collider {
+  const c = Math.abs(Math.cos(yaw));
+  const s = Math.abs(Math.sin(yaw));
+  return makeCollider(
+    position.x,
+    halfY,
+    position.z,
+    c * halfX + s * halfZ,
+    halfY,
+    s * halfX + c * halfZ,
+    0.08,
+  );
+}
+
+/**
+ * A tall, physical facade across any route that does not contain playable
+ * street. These seals overlap the side building masses so neither the player
+ * nor the camera can leak into an ungenerated part of the map.
+ */
+function buildHorizonSeal(
+  group: THREE.Group,
+  colliders: Collider[],
+  mats: WorldMaterials,
+  center: THREE.Vector3,
+  yaw: number,
+  width: number,
+  name: string,
+): HorizonSeal {
+  const height = 9.5;
+  const depth = 1.2;
+  const sealGroup = new THREE.Group();
+  sealGroup.name = name;
+  const sealColliders: Collider[] = [];
+  const wall = new THREE.Mesh(new THREE.BoxGeometry(width + 2.5, height, depth), mats.concreteDark);
+  wall.name = `${name}_Wall`;
+  wall.position.set(center.x, height / 2, center.z);
+  wall.rotation.y = yaw;
+  wall.castShadow = true;
+  wall.receiveShadow = true;
+  sealGroup.add(wall);
+  sealColliders.push(
+    makeRotatedCollider(wall.position, yaw, (width + 2.5) / 2, height / 2, depth / 2),
+  );
+
+  const serviceLight = new THREE.Mesh(
+    new THREE.BoxGeometry(Math.min(2.8, width * 0.3), 0.28, depth + 0.08),
+    mats.lampOrange,
+  );
+  serviceLight.name = `${name}_Light`;
+  serviceLight.position.set(center.x, 3.2, center.z);
+  serviceLight.rotation.y = yaw;
+  sealGroup.add(serviceLight);
+  group.add(sealGroup);
+  colliders.push(...sealColliders);
+  return { group: sealGroup, colliders: sealColliders };
+}
+
 function pickJunction(rnd: () => number, pathDist: number): JunctionKind {
   // Early path: more straights so the player learns the corridor
   if (pathDist < 40) return rnd() < 0.75 ? "straight" : rnd() < 0.5 ? "left" : "right";
@@ -130,6 +225,8 @@ function buildSideWall(
   hasDoor: boolean,
   interior: boolean,
   rnd: () => number,
+  lampPositions: THREE.Vector3[],
+  doors: InteractiveDoor[],
 ): void {
   const wallFaceX = side * (streetHalf + 0.25);
   const doorW = 2.2;
@@ -159,9 +256,7 @@ function buildSideWall(
     facade.castShadow = true;
     facade.receiveShadow = true;
     group.add(facade);
-    colliders.push(
-      makeCollider(fw.x, buildingHeight / 2, fw.z, 0.4, buildingHeight / 2, zLen / 2 + 0.1, 0.06),
-    );
+    colliders.push(makeRotatedCollider(fw, yaw, 0.4, buildingHeight / 2, zLen / 2 + 0.1));
 
     // Deep building mass behind facade (blocks line of sight / walking through)
     const massCenterX = side * (streetHalf + 0.25 + buildingDepth / 2);
@@ -176,34 +271,38 @@ function buildSideWall(
     mass.receiveShadow = true;
     group.add(mass);
     colliders.push(
-      makeCollider(
-        mw.x,
-        (buildingHeight * 0.92) / 2,
-        mw.z,
-        buildingDepth / 2,
-        (buildingHeight * 0.92) / 2,
-        zLen / 2,
-        0.05,
-      ),
+      makeRotatedCollider(mw, yaw, buildingDepth / 2, (buildingHeight * 0.92) / 2, zLen / 2),
     );
 
-    // Window strips (emissive panels)
-    const floors = Math.max(1, Math.floor(buildingHeight / 3.2));
+    // Repeated but varied window bays provide readable city scale without
+    // turning every facade into a costly unique material.
+    const floors = Math.min(5, Math.max(1, Math.floor(buildingHeight / 3.2)));
     for (let f = 0; f < floors; f++) {
-      const winY = 1.6 + f * 3.0;
+      const winY = 1.9 + f * 3.1;
       if (winY > buildingHeight - 1) break;
-      const nWin = Math.max(1, Math.floor(zLen / 3.5));
+      const nWin = Math.min(5, Math.max(1, Math.floor(zLen / 4.2)));
       for (let w = 0; w < nWin; w++) {
-        if (rnd() < 0.2) continue;
-        const wz = seg.z0 + 1.2 + (w + 0.5) * ((zLen - 2.4) / nWin);
+        if (rnd() < 0.15) continue;
+        const wz = seg.z0 + 1.5 + (w + 0.5) * ((zLen - 3) / nWin);
         const pane = new THREE.Mesh(
-          new THREE.BoxGeometry(0.12, 1.3, 1.4),
+          new THREE.BoxGeometry(0.12, 1.35, 1.55),
           rnd() > 0.5 ? mats.windowWarm : mats.windowCyan,
         );
         const pw = localToWorld(origin, yaw, wallFaceX + side * 0.28, winY, wz);
         pane.position.copy(pw);
         pane.rotation.y = yaw;
+        pane.castShadow = false;
         group.add(pane);
+
+        if (f === 0 && rnd() > 0.76) {
+          const unit = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.42, 0.78), mats.metal);
+          unit.name = "FacadeUtilityUnit";
+          const unitPos = localToWorld(origin, yaw, wallFaceX + side * 0.38, winY - 1, wz);
+          unit.position.copy(unitPos);
+          unit.rotation.y = yaw;
+          unit.castShadow = true;
+          group.add(unit);
+        }
       }
     }
   }
@@ -239,6 +338,7 @@ function buildSideWall(
         new THREE.BoxGeometry(roomDepth, 0.15, roomWidth),
         mats.concrete,
       );
+      floor.name = "InteriorFloor";
       const fp = localToWorld(origin, yaw, roomCenterX, 0.08, roomCenterZ);
       floor.position.copy(fp);
       floor.rotation.y = yaw;
@@ -247,6 +347,7 @@ function buildSideWall(
 
       // Three interior walls (back + two sides), opening toward street
       const back = new THREE.Mesh(new THREE.BoxGeometry(0.4, roomH, roomWidth), mats.concreteDark);
+      back.name = "InteriorWallBack";
       const bp = localToWorld(
         origin,
         yaw,
@@ -258,13 +359,14 @@ function buildSideWall(
       back.rotation.y = yaw;
       back.castShadow = true;
       group.add(back);
-      colliders.push(makeCollider(bp.x, roomH / 2, bp.z, 0.35, roomH / 2, roomWidth / 2, 0.05));
+      colliders.push(makeRotatedCollider(bp, yaw, 0.35, roomH / 2, roomWidth / 2));
 
       for (const sz of [-1, 1]) {
         const sideWall = new THREE.Mesh(
           new THREE.BoxGeometry(roomDepth, roomH, 0.4),
           mats.concrete,
         );
+        sideWall.name = `InteriorWallSide_${sz < 0 ? "A" : "B"}`;
         const sp = localToWorld(
           origin,
           yaw,
@@ -276,8 +378,34 @@ function buildSideWall(
         sideWall.rotation.y = yaw;
         sideWall.castShadow = true;
         group.add(sideWall);
-        colliders.push(makeCollider(sp.x, roomH / 2, sp.z, roomDepth / 2, roomH / 2, 0.3, 0.05));
+        colliders.push(makeRotatedCollider(sp, yaw, roomDepth / 2, roomH / 2, 0.3));
       }
+
+      // A real ceiling closes the room; the emissive fixture is also registered
+      // with the pooled practical-light system, so entering it allocates one of
+      // the nearby GPU lights without adding a permanent light per building.
+      const ceiling = new THREE.Mesh(
+        new THREE.BoxGeometry(roomDepth + 0.3, 0.24, roomWidth + 0.3),
+        mats.concreteDark,
+      );
+      ceiling.name = "InteriorRoof";
+      const cp = localToWorld(origin, yaw, roomCenterX, roomH + 0.12, roomCenterZ);
+      ceiling.position.copy(cp);
+      ceiling.rotation.y = yaw;
+      ceiling.castShadow = true;
+      ceiling.receiveShadow = true;
+      group.add(ceiling);
+
+      const fixture = new THREE.Mesh(
+        new THREE.BoxGeometry(Math.min(3.2, roomDepth * 0.45), 0.12, 0.5),
+        mats.lampOrange,
+      );
+      fixture.name = "InteriorLightFixture";
+      const fixturePos = localToWorld(origin, yaw, roomCenterX, roomH - 0.12, roomCenterZ);
+      fixture.position.copy(fixturePos);
+      fixture.rotation.y = yaw;
+      group.add(fixture);
+      lampPositions.push(fixturePos.clone().setY(roomH - 0.45));
 
       // Interior cover crates
       const crateCount = 1 + Math.floor(rnd() * 3);
@@ -291,6 +419,19 @@ function buildSideWall(
           makeCrate(mats, { x: wp.x, z: wp.z, scale: 0.7 + rnd() * 0.4, rotY: rnd() * Math.PI }),
         );
       }
+
+      const hinge = localToWorld(origin, yaw, wallFaceX, 0, doorZ0 + 0.09);
+      const door = createInteractiveDoor({
+        parent: group,
+        panelMaterial: mats.metalNavy,
+        handleMaterial: mats.metal,
+        hinge,
+        yaw,
+        side,
+        width: doorW - 0.18,
+      });
+      doors.push(door);
+      colliders.push(door.collider);
     }
   }
 }
@@ -305,7 +446,7 @@ function placeCoverAlongStreet(
   streetHalf: number,
   rnd: () => number,
 ): void {
-  const count = 4 + Math.floor(rnd() * 6);
+  const count = 3 + Math.floor(rnd() * 3);
   for (let i = 0; i < count; i++) {
     const z = 5 + rnd() * (length - 10);
     const side = rnd() > 0.5 ? 1 : -1;
@@ -350,7 +491,7 @@ function placeCoverAlongStreet(
       car.castShadow = true;
       car.receiveShadow = true;
       group.add(car);
-      colliders.push(makeCollider(wp.x, 0.62, wp.z, 1.15, 0.62, 2.15, 0.08));
+      colliders.push(makeRotatedCollider(car.position, car.rotation.y, 1.15, 0.62, 2.15));
     }
   }
 }
@@ -365,21 +506,24 @@ function buildSegment(
   mats: WorldMaterials,
 ): Segment {
   const rnd = mulberry32(hashStr(id) ^ seed);
-  const length = 28 + rnd() * 22;
-  const width = 9 + rnd() * 3.5;
+  const length = 30 + rnd() * 20;
+  const width = 14 + rnd() * 5;
   const streetHalf = width / 2;
-  const buildingDepth = 6 + rnd() * 8;
-  const buildingHeightL = 6 + rnd() * 16;
-  const buildingHeightR = 6 + rnd() * 16;
-  const hasDoorL = rnd() > 0.45;
-  const hasDoorR = rnd() > 0.45;
-  const interiorL = hasDoorL && rnd() > 0.35;
-  const interiorR = hasDoorR && rnd() > 0.35;
+  const buildingDepth = 7 + rnd() * 7;
+  const buildingHeightL = 7 + rnd() * 14;
+  const buildingHeightR = 7 + rnd() * 14;
+  const hasDoorL = rnd() > 0.42;
+  const hasDoorR = rnd() > 0.42;
+  // Every authored entrance is backed by a complete room, so an open door
+  // never reveals unbuilt space.
+  const interiorL = hasDoorL;
+  const interiorR = hasDoorR;
 
   const group = new THREE.Group();
   group.name = `Street_${id}`;
   const colliders: Collider[] = [];
-  const lamps: THREE.PointLight[] = [];
+  const lampPositions: THREE.Vector3[] = [];
+  const doors: InteractiveDoor[] = [];
 
   // Road bed
   const road = new THREE.Mesh(new THREE.BoxGeometry(width, 0.08, length), mats.asphalt);
@@ -424,6 +568,8 @@ function buildSegment(
     hasDoorL,
     interiorL,
     rnd,
+    lampPositions,
+    doors,
   );
   buildSideWall(
     group,
@@ -439,31 +585,41 @@ function buildSegment(
     hasDoorR,
     interiorR,
     rnd,
+    lampPositions,
+    doors,
   );
 
   placeCoverAlongStreet(group, colliders, mats, origin, yaw, length, streetHalf, rnd);
 
-  // Street lamps along both sides
-  const lampCount = 2 + Math.floor(length / 18);
+  // Visual lamp posts only (emissive heads). Real PointLights are pooled near the player.
+  const lampCount = 1 + Math.floor(length / 22);
   for (let i = 0; i < lampCount; i++) {
-    const z = 6 + i * (length / lampCount);
+    const z = 8 + i * (length / Math.max(1, lampCount));
     for (const side of [-1, 1] as const) {
       const lx = side * (streetHalf - 0.35);
       const base = localToWorld(origin, yaw, lx, 0, z);
-      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 5.2, 6), mats.metal);
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 5.2, 5), mats.metal);
       pole.position.set(base.x, 2.6, base.z);
-      pole.castShadow = true;
+      pole.castShadow = false;
       group.add(pole);
-      const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 8), mats.lampOrange);
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 6, 6), mats.lampOrange);
       head.position.set(base.x, 5.15, base.z);
+      head.castShadow = false;
       group.add(head);
-      const light = new THREE.PointLight(0xffb060, 0, 20, 2);
-      light.position.set(base.x, 5.0, base.z);
-      light.userData.baseIntensity = 100 + rnd() * 40;
-      group.add(light);
-      lamps.push(light);
+      lampPositions.push(new THREE.Vector3(base.x, 5.0, base.z));
     }
   }
+
+  const frontier = localToWorld(origin, yaw, 0, 0, length);
+  const frontierSeal = buildHorizonSeal(
+    group,
+    colliders,
+    mats,
+    frontier,
+    yaw,
+    width,
+    `HorizonSeal_Frontier_${id}`,
+  );
 
   return {
     id,
@@ -480,8 +636,11 @@ function buildSegment(
     interiorR,
     group,
     colliders,
-    lamps,
+    doors,
+    lampPositions,
     nextIds: [],
+    expanded: false,
+    frontierSeal,
     parentId,
     pathDist,
   };
@@ -502,6 +661,9 @@ export function createCityStream(
 ): CityStreamApi {
   const mats = createWorldMaterials();
   const colliders: Collider[] = [];
+  const enemySpawnPoints: THREE.Vector3[] = [];
+  const enemySpawnRecords: EnemySpawnRecord[] = [];
+  const reinforcementSpawnScratch: THREE.Vector3[] = [];
   const segments = new Map<string, Segment>();
   const root = new THREE.Group();
   root.name = "CityStream";
@@ -511,11 +673,28 @@ export function createCityStream(
   scene.add(sky.group);
 
   let idCounter = 1;
+  let traversalDistance = 0;
+  let currentSegmentId: string | null = null;
   const nextId = () => `s${idCounter++}`;
 
   const rebuildColliders = (): void => {
     colliders.length = 0;
-    for (const s of segments.values()) colliders.push(...s.colliders);
+    enemySpawnPoints.length = 0;
+    enemySpawnRecords.length = 0;
+    for (const segment of segments.values()) {
+      colliders.push(...segment.colliders);
+      for (let z = 6; z <= segment.length - 4; z += 4.5) {
+        for (const x of [-segment.width * 0.24, 0, segment.width * 0.24]) {
+          const position = localToWorld(segment.origin, segment.yaw, x, 0, z);
+          enemySpawnPoints.push(position);
+          enemySpawnRecords.push({
+            position,
+            pathDepth: segment.pathDist + z,
+            segmentId: segment.id,
+          });
+        }
+      }
+    }
   };
 
   const addSegment = (seg: Segment): void => {
@@ -523,13 +702,45 @@ export function createCityStream(
     segments.set(seg.id, seg);
   };
 
-  // Spawn corridor — long first street so you drop into an alley immediately
-  const spawn = buildSegment(nextId(), new THREE.Vector3(0, 0, -6), 0, 0, null, seed, mats);
+  // Three's default camera looks toward -Z, so point the first corridor that
+  // way and place its rear seal behind the player instead of in their sightline.
+  const spawn = buildSegment(nextId(), new THREE.Vector3(0, 0, 6), Math.PI, 0, null, seed, mats);
+  buildHorizonSeal(
+    spawn.group,
+    spawn.colliders,
+    mats,
+    spawn.origin,
+    spawn.yaw,
+    spawn.width,
+    "HorizonSeal_SpawnRear",
+  );
   addSegment(spawn);
   rebuildColliders();
 
+  // Pool of real lights — never more than MAX_DYNAMIC_LAMPS in the whole scene
+  const dynamicLamps: THREE.PointLight[] = [];
+  for (let i = 0; i < MAX_DYNAMIC_LAMPS; i++) {
+    const pl = new THREE.PointLight(0xffb060, 0, 18, 2);
+    pl.castShadow = false;
+    pl.name = `DynamicStreetLamp_${i}`;
+    root.add(pl);
+    dynamicLamps.push(pl);
+  }
+  let lampFactor = 1;
+  const lampScratch: Array<{ pos: THREE.Vector3; d: number }> = [];
+
   const expandFrom = (seg: Segment): void => {
-    if (seg.nextIds.length > 0) return;
+    if (seg.expanded) return;
+    seg.expanded = true;
+    if (seg.frontierSeal) {
+      seg.frontierSeal.group.removeFromParent();
+      disposeObject(seg.frontierSeal.group);
+      for (const collider of seg.frontierSeal.colliders) {
+        const index = seg.colliders.indexOf(collider);
+        if (index >= 0) seg.colliders.splice(index, 1);
+      }
+      seg.frontierSeal = null;
+    }
     const rnd = mulberry32(hashStr(seg.id + ":junc") ^ seed);
     const kind = pickJunction(rnd, seg.pathDist);
     const end = farEnd(seg);
@@ -564,25 +775,48 @@ export function createCityStream(
       return child;
     };
 
+    const openDirections = new Set<number>();
+    const openDirection = (yawOffset: number): void => {
+      openDirections.add(yawOffset);
+      spawnChild(yawOffset);
+    };
+
     if (kind === "straight") {
-      spawnChild(0);
+      openDirection(0);
     } else if (kind === "left") {
-      spawnChild(Math.PI / 2);
+      openDirection(Math.PI / 2);
     } else if (kind === "right") {
-      spawnChild(-Math.PI / 2);
+      openDirection(-Math.PI / 2);
     } else if (kind === "t") {
-      spawnChild(Math.PI / 2);
-      spawnChild(-Math.PI / 2);
+      openDirection(Math.PI / 2);
+      openDirection(-Math.PI / 2);
       // Optional forward continuation
-      if (rnd() > 0.4) spawnChild(0);
+      if (rnd() > 0.4) openDirection(0);
     } else if (kind === "cross") {
-      spawnChild(0);
-      spawnChild(Math.PI / 2);
-      spawnChild(-Math.PI / 2);
+      openDirection(0);
+      openDirection(Math.PI / 2);
+      openDirection(-Math.PI / 2);
     } else {
       // Lobby dead-end building with side exits
-      spawnChild(Math.PI / 2);
-      spawnChild(-Math.PI / 2);
+      openDirection(Math.PI / 2);
+      openDirection(-Math.PI / 2);
+    }
+
+    // Every unused side of the junction is a physical facade, never empty
+    // horizon. The inbound side remains open because it is the current street.
+    for (const yawOffset of [0, Math.PI / 2, -Math.PI / 2]) {
+      if (openDirections.has(yawOffset)) continue;
+      const sealYaw = end.yaw + yawOffset;
+      const sealCenter = localToWorld(end.origin, sealYaw, 0, 0, (seg.width + 4) / 2);
+      buildHorizonSeal(
+        seg.group,
+        seg.colliders,
+        mats,
+        sealCenter,
+        sealYaw,
+        seg.width + 4,
+        `HorizonSeal_${seg.id}_${yawOffset.toFixed(2)}`,
+      );
     }
 
     // Corner cover on the junction
@@ -622,6 +856,7 @@ export function createCityStream(
       }
     }
     if (!nearest) return;
+    currentSegmentId = nearest.id;
 
     // Expand if player is past 55% of nearest segment
     const localZ =
@@ -639,8 +874,12 @@ export function createCityStream(
     const dx = playerPos.x - nearest.origin.x;
     const dz = playerPos.z - nearest.origin.z;
     const lz = s * dx + c * dz;
+    traversalDistance = Math.max(
+      traversalDistance,
+      nearest.pathDist + THREE.MathUtils.clamp(lz, 0, nearest.length),
+    );
 
-    if (lz > nearest.length * 0.5 || nearest.nextIds.length === 0) {
+    if (lz > nearest.length * 0.5 || !nearest.expanded) {
       expandFrom(nearest);
       // Also expand children that are close
       for (const nid of nearest.nextIds) {
@@ -680,7 +919,35 @@ export function createCityStream(
       // Detach parent links
       if (seg.parentId) {
         const parent = segments.get(seg.parentId);
-        if (parent) parent.nextIds = parent.nextIds.filter((x) => x !== id);
+        if (parent) {
+          parent.nextIds = parent.nextIds.filter((x) => x !== id);
+          buildHorizonSeal(
+            parent.group,
+            parent.colliders,
+            mats,
+            seg.origin,
+            seg.yaw,
+            seg.width,
+            `HorizonSeal_Culled_${seg.id}`,
+          );
+        }
+      }
+      // When a parent street disappears behind the player, close the surviving
+      // child's entry so the edge of the streamed graph remains inaccessible.
+      for (const childId of seg.nextIds) {
+        if (toRemove.includes(childId)) continue;
+        const child = segments.get(childId);
+        if (!child) continue;
+        buildHorizonSeal(
+          child.group,
+          child.colliders,
+          mats,
+          child.origin,
+          child.yaw,
+          child.width,
+          `HorizonSeal_CulledEntry_${seg.id}`,
+        );
+        child.parentId = null;
       }
       root.remove(seg.group);
       disposeObject(seg.group);
@@ -689,27 +956,84 @@ export function createCityStream(
     if (toRemove.length) rebuildColliders();
   };
 
-  let lampFactor = 1;
-
-  const update = (_dt: number, _elapsed: number, playerPos: THREE.Vector3): void => {
+  const update = (dt: number, _elapsed: number, playerPos: THREE.Vector3): void => {
     cullFar(playerPos);
-    // Keep lamps updated if factor changed externally
+
+    for (const segment of segments.values()) {
+      for (const door of segment.doors) updateInteractiveDoor(door, dt);
+    }
+
+    // Bind the few real PointLights to nearest emissive lamp heads
+    lampScratch.length = 0;
     for (const seg of segments.values()) {
-      for (const lamp of seg.lamps) {
-        const base = (lamp.userData.baseIntensity as number) ?? 100;
-        lamp.intensity = base * lampFactor;
+      for (const p of seg.lampPositions) {
+        lampScratch.push({ pos: p, d: p.distanceToSquared(playerPos) });
       }
     }
+    lampScratch.sort((a, b) => a.d - b.d);
+    for (let i = 0; i < dynamicLamps.length; i++) {
+      const lamp = dynamicLamps[i]!;
+      const src = lampScratch[i];
+      if (!src || lampFactor < 0.05) {
+        lamp.intensity = 0;
+        continue;
+      }
+      lamp.position.copy(src.pos);
+      lamp.intensity = (90 + (1 - Math.min(1, src.d / 400)) * 50) * lampFactor;
+    }
+  };
+
+  function* activeDoors(): Generator<InteractiveDoor> {
+    for (const segment of segments.values()) {
+      yield* segment.doors;
+    }
+  }
+
+  const interact = (origin: THREE.Vector3, direction: THREE.Vector3): boolean =>
+    interactWithNearestDoor(activeDoors(), origin, direction);
+
+  const getInteractionPrompt = (origin: THREE.Vector3, direction: THREE.Vector3): string | null =>
+    getDoorInteractionPrompt(activeDoors(), origin, direction);
+
+  const getReinforcementSpawnPoints = (minimumDepth: number): readonly THREE.Vector3[] => {
+    reinforcementSpawnScratch.length = 0;
+    const safeMinimum = Number.isFinite(minimumDepth) ? Math.max(0, minimumDepth) : 0;
+    const maximumDepth = safeMinimum + STREAM_AHEAD;
+    const forwardSegmentIds = new Set<string>();
+    const pendingSegmentIds = currentSegmentId ? [currentSegmentId] : [];
+    while (pendingSegmentIds.length > 0) {
+      const segmentId = pendingSegmentIds.pop()!;
+      if (forwardSegmentIds.has(segmentId)) continue;
+      forwardSegmentIds.add(segmentId);
+      const segment = segments.get(segmentId);
+      if (segment) pendingSegmentIds.push(...segment.nextIds);
+    }
+    const isForwardSegment = (record: EnemySpawnRecord): boolean =>
+      forwardSegmentIds.size === 0 || forwardSegmentIds.has(record.segmentId);
+
+    for (const record of enemySpawnRecords) {
+      if (
+        isForwardSegment(record) &&
+        record.pathDepth >= safeMinimum &&
+        record.pathDepth <= maximumDepth
+      ) {
+        reinforcementSpawnScratch.push(record.position);
+      }
+    }
+
+    if (reinforcementSpawnScratch.length === 0) {
+      for (const record of enemySpawnRecords) {
+        if (isForwardSegment(record) && record.pathDepth >= Math.max(0, safeMinimum - 30)) {
+          reinforcementSpawnScratch.push(record.position);
+        }
+      }
+    }
+
+    return reinforcementSpawnScratch.length > 0 ? reinforcementSpawnScratch : enemySpawnPoints;
   };
 
   const setLampFactor = (factor: number): void => {
     lampFactor = factor;
-    for (const seg of segments.values()) {
-      for (const lamp of seg.lamps) {
-        const base = (lamp.userData.baseIntensity as number) ?? 100;
-        lamp.intensity = base * factor;
-      }
-    }
   };
 
   root.userData.setLampFactor = setLampFactor;
@@ -721,6 +1045,8 @@ export function createCityStream(
     }
     segments.clear();
     colliders.length = 0;
+    enemySpawnPoints.length = 0;
+    enemySpawnRecords.length = 0;
     scene.remove(root);
     scene.remove(sky.group);
     disposeObject(sky.group);
@@ -729,10 +1055,15 @@ export function createCityStream(
 
   return {
     colliders,
+    enemySpawnPoints,
     groundY: 0,
     seed,
     starGroup: sky.group,
     update,
+    interact,
+    getInteractionPrompt,
+    getTraversalDistance: () => traversalDistance,
+    getReinforcementSpawnPoints,
     dispose,
   };
 }

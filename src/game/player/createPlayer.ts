@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { Collider, DamageIndicator, GameHudState } from "@/game/types";
 import { createWeapon, type WeaponController } from "./weapon";
 import { canOccupyHeight, PHYSICS, resolveBody, type PhysicsBody } from "./physics";
+import { applyDamageToVitals } from "./vitals";
 
 const LOOK_SENS = 0.002;
 const TOUCH_LOOK_SENS = 0.0038;
@@ -33,6 +34,8 @@ export function createPlayer(opts: {
   colliders: Collider[];
   onHud: (p: Partial<GameHudState>) => void;
   onShoot: (origin: THREE.Vector3, direction: THREE.Vector3, ads: boolean) => void;
+  onInteract?: (origin: THREE.Vector3, direction: THREE.Vector3) => void;
+  onDeath?: () => void;
   onReloadStart?: () => void;
   onFootstep?: () => void;
   /** Empty magazine click when trigger pulled dry. */
@@ -54,6 +57,7 @@ export function createPlayer(opts: {
     toggleCrouch: () => void;
     jump: () => void;
     reload: () => void;
+    interact: () => void;
   };
   getPosition: () => THREE.Vector3;
   takeDamage: (amount: number, fromWorld?: THREE.Vector3) => void;
@@ -61,7 +65,18 @@ export function createPlayer(opts: {
   dispose: () => void;
   weapon: WeaponController;
 } {
-  const { camera, canvas, colliders, onHud, onShoot, onReloadStart, onFootstep, onEmpty } = opts;
+  const {
+    camera,
+    canvas,
+    colliders,
+    onHud,
+    onShoot,
+    onInteract,
+    onDeath,
+    onReloadStart,
+    onFootstep,
+    onEmpty,
+  } = opts;
 
   // Ensure camera is in the scene graph (for viewmodel lights, etc.)
   if (!camera.parent) {
@@ -84,6 +99,7 @@ export function createPlayer(opts: {
   let locked = document.pointerLockElement === canvas;
   let health = MAX_HEALTH;
   let armor = MAX_ARMOR;
+  let dead = false;
   let outOfCombatT = REGEN_DELAY;
 
   let crouching = false;
@@ -172,6 +188,13 @@ export function createPlayer(opts: {
 
   function pushDamageIndicators(): void {
     pushHud({ damageIndicators: damageIndicators.map((d) => ({ ...d })) });
+  }
+
+  function interact(): void {
+    if (!locked) return;
+    camera.getWorldPosition(shootOrigin);
+    camera.getWorldDirection(shootDir);
+    onInteract?.(shootOrigin, shootDir);
   }
 
   // --- Input handlers ---
@@ -271,6 +294,7 @@ export function createPlayer(opts: {
         syncWeaponHud();
       }
     },
+    interact,
   };
 
   const onMouseDown = (e: MouseEvent): void => {
@@ -302,6 +326,7 @@ export function createPlayer(opts: {
         syncWeaponHud();
       }
     }
+    if (e.code === "KeyE" && locked && !e.repeat) interact();
     if (e.code === "Escape") {
       document.exitPointerLock?.();
     }
@@ -568,14 +593,11 @@ export function createPlayer(opts: {
   }
 
   function takeDamage(amount: number, fromWorld?: THREE.Vector3): void {
-    if (amount <= 0 || health <= 0) return;
+    if (amount <= 0 || dead) return;
     outOfCombatT = 0;
-    // Armor absorbs 50% of incoming damage until depleted; remainder hits health.
-    const armorShare = amount * 0.5;
-    const armorTake = Math.min(armor, armorShare);
-    armor = Math.max(0, armor - armorTake);
-    const healthDmg = amount - armorTake;
-    health = Math.max(0, health - healthDmg);
+    const nextVitals = applyDamageToVitals(health, armor, amount);
+    health = nextVitals.health;
+    armor = nextVitals.armor;
 
     // Damage direction indicator (relative to look yaw)
     if (fromWorld) {
@@ -611,10 +633,15 @@ export function createPlayer(opts: {
       damageFlash: 1,
       damageIndicators: damageIndicators.map((d) => ({ ...d })),
     });
+    if (nextVitals.defeated) {
+      dead = true;
+      resetInput();
+      onDeath?.();
+    }
   }
 
   function heal(amount: number): void {
-    if (amount <= 0) return;
+    if (amount <= 0 || dead) return;
     health = Math.min(MAX_HEALTH, health + amount);
     pushHud({ health });
   }
