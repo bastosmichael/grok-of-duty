@@ -568,7 +568,7 @@ export function GameHUD({ state, onExit, onEngage, mode, touch = false }: GameHU
                 <p className="mt-4 max-w-sm font-mono text-[11px] uppercase leading-relaxed tracking-[.11em] text-white/65">
                   {mode === "range"
                     ? "The original training compound is back online with a full ten-contact squad. Only two operators can hold active fire lanes at first, keeping the dense drill readable while later waves increase pressure."
-                    : "Level one begins in the enclosed alley against one fighter. Every secured level generates new cover and adds one operator. Enemy aim, speed, and fire lanes rise gradually so every round remains learnable."}
+                    : "Level one opens on a wide city patrol with six contacts, but only one can hold an active fire lane. Every secured level extends the streets and adds two operators while aim, speed, and fire lanes rise gradually."}
                 </p>
 
                 <dl className="mt-7 grid grid-cols-3 gap-px bg-white/10">
@@ -624,6 +624,7 @@ export function GameHUD({ state, onExit, onEngage, mode, touch = false }: GameHU
                         ["CRCH", "Crouch"],
                         ["JUMP", "Jump"],
                         ["R", "Reload"],
+                        ["USE", "Use door"],
                       ]
                     : [
                         ["WASD", "Move"],
@@ -634,6 +635,7 @@ export function GameHUD({ state, onExit, onEngage, mode, touch = false }: GameHU
                         ["CTRL", "Crouch"],
                         ["SPACE", "Jump"],
                         ["R", "Reload"],
+                        ["E", "Use door"],
                       ]
                   ).map(([key, action]) => (
                     <div key={key} className="flex items-center gap-2.5">

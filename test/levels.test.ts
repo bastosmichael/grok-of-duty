@@ -16,13 +16,13 @@ function seededRandom(seed: number): () => number {
 }
 
 describe("progressive procedural levels", () => {
-  test("starts with one approachable fighter and adds exactly one per level", () => {
+  test("starts with a visible patrol and adds two contacts per level", () => {
     const profiles = Array.from({ length: 10 }, (_, index) =>
       createLevelProfile(index + 1, seededRandom(index + 20)),
     );
 
     for (let index = 0; index < profiles.length; index++) {
-      expect(profiles[index]!.fighterCount).toBe(index + 1);
+      expect(profiles[index]!.fighterCount).toBe(6 + index * 2);
     }
 
     const first = profiles[0]!;

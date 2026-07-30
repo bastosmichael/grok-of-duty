@@ -100,8 +100,9 @@ export function createLevelProfile(
   const alleyProfile: LevelProfile = {
     level: safeLevel,
     codename: `${pick(LEVEL_ADJECTIVES, random)} ${pick(LEVEL_NOUNS, random)}`.toUpperCase(),
-    // The central promise of the mode: every level adds exactly one fighter.
-    fighterCount: safeLevel,
+    // A visible patrol occupies the wider streets from the start. More contacts
+    // join each level, while capped fire lanes keep the learning curve gentle.
+    fighterCount: Math.min(30, 6 + tier * 2),
     // Large half-size so enemies can pursue along streaming streets (no boxed arena).
     arenaHalfSize: Math.min(120, 48 + tier * 1.2 + sizeJitter),
     coverCount: Math.min(10, 1 + Math.floor(tier / 4)),

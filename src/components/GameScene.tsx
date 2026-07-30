@@ -112,6 +112,9 @@ export default function GameScene({ onExit, mode }: Props) {
         mergeHud(partial);
       };
 
+      // Scenario boundary: modes select only the world and difficulty profile.
+      // Player movement, weapons, hit detection, enemy AI, damage, and animation
+      // remain this single shared gameplay stack for both training scenarios.
       const combat = createCombat({
         mode,
         scene: gfx.scene,
@@ -152,6 +155,9 @@ export default function GameScene({ onExit, mode }: Props) {
         onShoot: (origin, direction, ads) => {
           combat.handleShot(origin, direction, ads);
           audio.playGunshot(ads);
+        },
+        onInteract: (origin, direction) => {
+          world.interact(origin, direction);
         },
         onReloadStart: () => audio.playReload(),
         onFootstep: () => audio.playFootstep(),
@@ -383,6 +389,9 @@ export default function GameScene({ onExit, mode }: Props) {
   const touchReload = useCallback(() => {
     playerRef.current?.touch.reload();
   }, []);
+  const touchInteract = useCallback(() => {
+    playerRef.current?.touch.interact();
+  }, []);
   const touchCrouch = useCallback(() => {
     playerRef.current?.touch.toggleCrouch();
   }, []);
@@ -411,6 +420,7 @@ export default function GameScene({ onExit, mode }: Props) {
               onSprint={touchSprint}
               onJump={touchJump}
               onReload={touchReload}
+              onInteract={touchInteract}
               onCrouch={touchCrouch}
               onPause={handlePause}
             />

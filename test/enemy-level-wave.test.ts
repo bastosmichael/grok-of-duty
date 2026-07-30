@@ -5,7 +5,7 @@ import { ENEMY_BODY } from "../src/game/combat/enemyPhysics";
 import { createLevelProfile } from "../src/game/combat/levels";
 
 describe("level enemy waves", () => {
-  test("creates the requested easy opening fighter and does not respawn a cleared wave", () => {
+  test("creates the requested opening patrol and does not respawn a cleared fighter", () => {
     const scene = new THREE.Scene();
     const arenaHalf = 16;
     const profile = createLevelProfile(1, () => 0);
@@ -26,7 +26,7 @@ describe("level enemy waves", () => {
 
     try {
       const enemies = system.getEnemies();
-      expect(enemies).toHaveLength(1);
+      expect(enemies).toHaveLength(6);
       const enemy = enemies[0]!;
       expect(enemy.hp).toBe(profile.enemyHp);
       expect(enemy.maxHp).toBe(profile.enemyHp);

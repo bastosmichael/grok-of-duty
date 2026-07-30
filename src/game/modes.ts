@@ -3,7 +3,7 @@ export const TRAINING_MODES = {
     title: "Alley Operations",
     eyebrow: "Progressive pursuit",
     description:
-      "Clear enclosed city blocks, breach lit interiors, and face a squad that grows every level.",
+      "Pursue growing patrols through wide, endless city blocks and breach interactive lit interiors.",
   },
   range: {
     title: "Legacy Training Range",

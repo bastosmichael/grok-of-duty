@@ -33,6 +33,7 @@ export function createPlayer(opts: {
   colliders: Collider[];
   onHud: (p: Partial<GameHudState>) => void;
   onShoot: (origin: THREE.Vector3, direction: THREE.Vector3, ads: boolean) => void;
+  onInteract?: (origin: THREE.Vector3, direction: THREE.Vector3) => void;
   onReloadStart?: () => void;
   onFootstep?: () => void;
   /** Empty magazine click when trigger pulled dry. */
@@ -54,6 +55,7 @@ export function createPlayer(opts: {
     toggleCrouch: () => void;
     jump: () => void;
     reload: () => void;
+    interact: () => void;
   };
   getPosition: () => THREE.Vector3;
   takeDamage: (amount: number, fromWorld?: THREE.Vector3) => void;
@@ -61,7 +63,17 @@ export function createPlayer(opts: {
   dispose: () => void;
   weapon: WeaponController;
 } {
-  const { camera, canvas, colliders, onHud, onShoot, onReloadStart, onFootstep, onEmpty } = opts;
+  const {
+    camera,
+    canvas,
+    colliders,
+    onHud,
+    onShoot,
+    onInteract,
+    onReloadStart,
+    onFootstep,
+    onEmpty,
+  } = opts;
 
   // Ensure camera is in the scene graph (for viewmodel lights, etc.)
   if (!camera.parent) {
@@ -174,6 +186,13 @@ export function createPlayer(opts: {
     pushHud({ damageIndicators: damageIndicators.map((d) => ({ ...d })) });
   }
 
+  function interact(): void {
+    if (!locked) return;
+    camera.getWorldPosition(shootOrigin);
+    camera.getWorldDirection(shootDir);
+    onInteract?.(shootOrigin, shootDir);
+  }
+
   // --- Input handlers ---
   const onMouseMove = (e: MouseEvent): void => {
     if (document.pointerLockElement !== canvas) return;
@@ -271,6 +290,7 @@ export function createPlayer(opts: {
         syncWeaponHud();
       }
     },
+    interact,
   };
 
   const onMouseDown = (e: MouseEvent): void => {
@@ -302,6 +322,7 @@ export function createPlayer(opts: {
         syncWeaponHud();
       }
     }
+    if (e.code === "KeyE" && locked && !e.repeat) interact();
     if (e.code === "Escape") {
       document.exitPointerLock?.();
     }

@@ -44,7 +44,6 @@ type JunctionKind = "straight" | "left" | "right" | "t" | "cross" | "end_with_lo
 type HorizonSeal = {
   group: THREE.Group;
   colliders: Collider[];
-  doors: InteractiveDoor[];
 };
 
 type Segment = {
@@ -64,6 +63,7 @@ type Segment = {
   interiorR: boolean;
   group: THREE.Group;
   colliders: Collider[];
+  doors: InteractiveDoor[];
   /** Emissive lamp head world positions (no per-lamp PointLight). */
   lampPositions: THREE.Vector3[];
   /** Child segment ids generated from the far end. */
@@ -287,13 +287,7 @@ function buildSideWall(
         if (f === 0 && rnd() > 0.76) {
           const unit = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.42, 0.78), mats.metal);
           unit.name = "FacadeUtilityUnit";
-          const unitPos = localToWorld(
-            origin,
-            yaw,
-            wallFaceX + side * 0.38,
-            winY - 1,
-            wz,
-          );
+          const unitPos = localToWorld(origin, yaw, wallFaceX + side * 0.38, winY - 1, wz);
           unit.position.copy(unitPos);
           unit.rotation.y = yaw;
           unit.castShadow = true;
