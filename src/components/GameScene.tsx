@@ -126,6 +126,9 @@ export default function GameScene({ onExit, onRetry, onSwitchMode, mode }: Props
         camera: gfx.camera,
         colliders: world.colliders,
         enemySpawnPoints: world.enemySpawnPoints,
+        getTraversalDistance: () => world.getTraversalDistance(),
+        getReinforcementSpawnPoints: (minimumDepth) =>
+          world.getReinforcementSpawnPoints(minimumDepth),
         onHud,
         onPlayerDamage: (amount, fromWorld) => {
           if (sessionEnded) return;
@@ -171,7 +174,7 @@ export default function GameScene({ onExit, onRetry, onSwitchMode, mode }: Props
           document.exitPointerLock?.();
           playerRef.current?.releaseTouch();
           audio.setAmbient(false);
-          onHud({ health: 0, locked: false, gameOver: true });
+          onHud({ health: 0, locked: false, gameOver: true, interactionPrompt: null });
           trackGoogleEvent("game_over", {
             level: sessionHud.level,
             score: sessionHud.score,
@@ -243,6 +246,7 @@ export default function GameScene({ onExit, onRetry, onSwitchMode, mode }: Props
         hitMarkerHeadshot: false,
         damageIndicators: [],
         gameOver: false,
+        interactionPrompt: null,
       });
 
       const onResize = () => gfx.resize();
@@ -253,7 +257,10 @@ export default function GameScene({ onExit, onRetry, onSwitchMode, mode }: Props
       const clock = gfx.clock;
       clock.reset();
       let lastLockState: boolean | null = null;
+      let lastInteractionPrompt: string | null = null;
       let pausedRenderTime = 0;
+      const interactionOrigin = new THREE.Vector3();
+      const interactionDirection = new THREE.Vector3();
 
       const tick = (timestamp?: number) => {
         if (disposed) return;
@@ -279,8 +286,22 @@ export default function GameScene({ onExit, onRetry, onSwitchMode, mode }: Props
           world.update(dt, elapsed, playerPos);
           lights.update(dt, elapsed, playerPos);
           player.update(dt);
+          gfx.camera.getWorldPosition(interactionOrigin);
+          gfx.camera.getWorldDirection(interactionDirection);
+          const interactionPrompt = world.getInteractionPrompt(
+            interactionOrigin,
+            interactionDirection,
+          );
+          if (interactionPrompt !== lastInteractionPrompt) {
+            lastInteractionPrompt = interactionPrompt;
+            onHud({ interactionPrompt });
+          }
           combat.update(dt, playerPos);
         } else {
+          if (lastInteractionPrompt !== null) {
+            lastInteractionPrompt = null;
+            onHud({ interactionPrompt: null });
+          }
           if (!sessionEnded) player.update(0);
           pausedRenderTime += dt;
           if (pausedRenderTime < 0.05) {

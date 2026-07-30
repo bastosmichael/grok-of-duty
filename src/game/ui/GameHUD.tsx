@@ -233,6 +233,7 @@ export function GameHUD({
     levelName,
     hostilesRemaining,
     hostilesTotal,
+    district,
     levelState,
     weaponName,
     reloading,
@@ -247,6 +248,7 @@ export function GameHUD({
     locked,
     ready,
     gameOver,
+    interactionPrompt,
   } = state;
 
   const healthRatio = maxHealth > 0 ? health / maxHealth : 0;
@@ -330,6 +332,17 @@ export function GameHUD({
 
       <DamageDirOverlay indicators={damageIndicators ?? []} />
       <Reticle ads={ads} hitMarker={hitMarker} kill={hitMarkerKill} headshot={hitMarkerHeadshot} />
+      {locked && interactionPrompt && (
+        <div
+          className="hud-motion absolute left-1/2 top-[calc(50%+68px)] flex -translate-x-1/2 items-center gap-2 border border-primary/45 bg-black/78 px-3 py-2 font-mono text-[9px] font-semibold uppercase tracking-[.16em] text-white shadow-[0_0_22px_rgba(0,0,0,.8)] backdrop-blur-[2px]"
+          style={{ animation: "hud-enter .18s ease-out both" }}
+          role="status"
+          aria-live="polite"
+        >
+          <Key>{touch ? "USE" : "E"}</Key>
+          <span>{interactionPrompt}</span>
+        </div>
+      )}
 
       {centerMessage && (
         <div
@@ -378,6 +391,12 @@ export function GameHUD({
               </span>
             </div>
             <div className="mt-0.5 text-[8px] tracking-[.2em] text-white/65 max-[430px]:hidden">
+              {mode === "alley" && (
+                <>
+                  DISTRICT {district.toString().padStart(2, "0")}{" "}
+                  <span className="text-white/20">//</span>{" "}
+                </>
+              )}
               PROCEDURAL AO <span className="text-white/20">//</span>{" "}
               {hostilesTotal === 1 ? "SOLO CONTACT" : `${hostilesTotal} CONTACTS`}
             </div>
@@ -671,7 +690,7 @@ export function GameHUD({
                 <p className="mt-4 max-w-sm font-mono text-[11px] uppercase leading-relaxed tracking-[.11em] text-white/65">
                   {mode === "range"
                     ? "The original training compound is back online with a full ten-contact squad. Only two operators can hold active fire lanes at first, keeping the dense drill readable while later waves increase pressure."
-                    : "Level one opens on a wide city patrol with six contacts, but only one can hold an active fire lane. Every secured level extends the streets and adds two operators while aim, speed, and fire lanes rise gradually."}
+                    : "Level one opens with six contacts and one active fire lane. Push into each newly generated district to draw two more operators into playable streets ahead; additional fire lanes unlock only after several blocks."}
                 </p>
 
                 <dl className="mt-7 grid grid-cols-3 gap-px bg-white/10">
@@ -753,9 +772,9 @@ export function GameHUD({
                   <div className="flex items-start gap-3">
                     <span className="mt-0.5 text-primary">◆</span>
                     <p className="font-mono text-[10px] uppercase leading-relaxed tracking-[.09em] text-white/55">
-                      Each procedural level rolls a new codename, perimeter, cover plan, and enemy
-                      callsigns. Early levels prioritize aim practice before pressure builds in
-                      measured training steps.
+                      Aim at a nearby door until the contextual E or USE prompt appears, then press
+                      it to open or close the door. In the alley, every deeper district generates
+                      another patrol while live fire lanes increase in measured steps.
                     </p>
                   </div>
                 </div>

@@ -6,6 +6,9 @@ const DOOR_THICKNESS = 0.16;
 const DOOR_SPEED = 11;
 const MAX_INTERACTION_DISTANCE = 3.4;
 const MAX_INTERACTION_OFFSET = 1.25;
+const doorCenter = new THREE.Vector3();
+const doorOffset = new THREE.Vector3();
+const doorDirection = new THREE.Vector3();
 
 export type InteractiveDoor = {
   pivot: THREE.Group;
@@ -92,23 +95,21 @@ export function updateInteractiveDoor(door: InteractiveDoor, dt: number): void {
  * Toggle the closest door in a short view cone. Door selection lives in the
  * world layer so desktop and touch players share exactly the same behavior.
  */
-export function interactWithNearestDoor(
+export function findNearestInteractiveDoor(
   doors: Iterable<InteractiveDoor>,
   origin: Readonly<THREE.Vector3>,
   direction: Readonly<THREE.Vector3>,
-): boolean {
+): InteractiveDoor | null {
   let selected: InteractiveDoor | null = null;
   let bestScore = Infinity;
-  const center = new THREE.Vector3();
-  const offset = new THREE.Vector3();
-  const normalizedDirection = new THREE.Vector3().copy(direction).normalize();
+  doorDirection.copy(direction).normalize();
 
   for (const door of doors) {
-    door.panel.getWorldPosition(center);
-    offset.copy(center).sub(origin);
-    const forwardDistance = offset.dot(normalizedDirection);
+    door.panel.getWorldPosition(doorCenter);
+    doorOffset.copy(doorCenter).sub(origin);
+    const forwardDistance = doorOffset.dot(doorDirection);
     if (forwardDistance <= 0 || forwardDistance > MAX_INTERACTION_DISTANCE) continue;
-    const sideDistanceSq = Math.max(0, offset.lengthSq() - forwardDistance * forwardDistance);
+    const sideDistanceSq = Math.max(0, doorOffset.lengthSq() - forwardDistance * forwardDistance);
     if (sideDistanceSq > MAX_INTERACTION_OFFSET * MAX_INTERACTION_OFFSET) continue;
     const score = forwardDistance + Math.sqrt(sideDistanceSq) * 0.35;
     if (score < bestScore) {
@@ -117,6 +118,25 @@ export function interactWithNearestDoor(
     }
   }
 
+  return selected;
+}
+
+export function getDoorInteractionPrompt(
+  doors: Iterable<InteractiveDoor>,
+  origin: Readonly<THREE.Vector3>,
+  direction: Readonly<THREE.Vector3>,
+): "Open door" | "Close door" | null {
+  const door = findNearestInteractiveDoor(doors, origin, direction);
+  if (!door) return null;
+  return door.targetOpen ? "Close door" : "Open door";
+}
+
+export function interactWithNearestDoor(
+  doors: Iterable<InteractiveDoor>,
+  origin: Readonly<THREE.Vector3>,
+  direction: Readonly<THREE.Vector3>,
+): boolean {
+  const selected = findNearestInteractiveDoor(doors, origin, direction);
   if (!selected) return false;
   selected.targetOpen = !selected.targetOpen;
   return true;

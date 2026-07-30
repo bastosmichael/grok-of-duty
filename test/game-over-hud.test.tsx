@@ -51,3 +51,40 @@ describe("shared game-over HUD", () => {
     expect(html).toContain("Try Alley Operations");
   });
 });
+
+describe("contextual interaction HUD", () => {
+  test("shows the correct door instruction only while a door is targeted", () => {
+    const state = {
+      ...DEFAULT_HUD,
+      loading: false,
+      ready: true,
+      locked: true,
+      interactionPrompt: "Open door",
+    };
+    const desktop = renderToStaticMarkup(
+      <GameHUD
+        state={state}
+        mode="alley"
+        onEngage={() => {}}
+        onExit={() => {}}
+        onRetry={() => {}}
+        onSwitchMode={() => {}}
+      />,
+    );
+    const touch = renderToStaticMarkup(
+      <GameHUD
+        state={state}
+        mode="alley"
+        touch
+        onEngage={() => {}}
+        onExit={() => {}}
+        onRetry={() => {}}
+        onSwitchMode={() => {}}
+      />,
+    );
+
+    expect(desktop).toContain(">E</kbd>");
+    expect(desktop).toContain("Open door");
+    expect(touch).toContain(">USE</kbd>");
+  });
+});

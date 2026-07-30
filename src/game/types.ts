@@ -24,6 +24,8 @@ export type GameHudState = {
   levelName: string;
   hostilesRemaining: number;
   hostilesTotal: number;
+  /** One-based streamed city depth band. */
+  district: number;
   levelState: LevelState;
   weaponName: string;
   reloading: boolean;
@@ -45,6 +47,8 @@ export type GameHudState = {
   ready: boolean;
   /** Terminal session state after player health reaches zero. */
   gameOver: boolean;
+  /** Contextual action available at the center reticle. */
+  interactionPrompt: string | null;
 };
 
 export type KillFeedEntry = {
@@ -95,6 +99,7 @@ export const DEFAULT_HUD: GameHudState = {
   levelName: "INITIALIZING",
   hostilesRemaining: 1,
   hostilesTotal: 1,
+  district: 1,
   levelState: "incoming",
   weaponName: "M4A1 · TACTICAL",
   reloading: false,
@@ -112,4 +117,5 @@ export const DEFAULT_HUD: GameHudState = {
   locked: false,
   ready: false,
   gameOver: false,
+  interactionPrompt: null,
 };

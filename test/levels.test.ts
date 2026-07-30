@@ -27,16 +27,15 @@ describe("progressive procedural levels", () => {
 
     const first = profiles[0]!;
     const late = profiles[9]!;
-    // Street pursuit bounds — large enough for corridors, not a sealed box
-    expect(first.arenaHalfSize).toBeGreaterThanOrEqual(48);
-    expect(first.arenaHalfSize).toBeLessThan(52);
+    // Streaming pursuit stays grounded far beyond the original spawn block.
+    expect(first.arenaHalfSize).toBe(4096);
     expect(first.enemyDamageScale).toBeLessThan(0.6);
     expect(first.enemySpeed).toBeLessThan(2.7);
     expect(first.enemyHp).toBeLessThanOrEqual(50);
     expect(first.concurrentAttackers).toBe(1);
     expect(profiles[7]!.concurrentAttackers).toBe(1);
     expect(profiles[8]!.concurrentAttackers).toBe(2);
-    expect(late.arenaHalfSize).toBeGreaterThan(first.arenaHalfSize);
+    expect(late.arenaHalfSize).toBe(first.arenaHalfSize);
     expect(late.enemySpeed).toBeGreaterThan(first.enemySpeed);
     expect(late.enemyHp).toBeGreaterThan(first.enemyHp);
     expect(late.enemyAccuracy).toBeGreaterThan(first.enemyAccuracy);

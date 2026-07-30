@@ -107,4 +107,63 @@ describe("level enemy waves", () => {
       system.dispose();
     }
   });
+
+  test("adds generated reinforcements at newly streamed street positions", () => {
+    const scene = new THREE.Scene();
+    const system = createEnemySystem(scene, {
+      count: 1,
+      arenaHalfSize: 80,
+      playerClearRadius: 4,
+      respawn: false,
+      colliders: [],
+      spawnPoints: [new THREE.Vector3(0, 0, -10)],
+      onPlayerDamage: () => {},
+    });
+    const generatedStreet = [
+      new THREE.Vector3(-3, 0, -42),
+      new THREE.Vector3(0, 0, -44),
+      new THREE.Vector3(3, 0, -46),
+    ];
+
+    try {
+      const added = system.addEnemies(2, new THREE.Vector3(), generatedStreet);
+      const authored = new Set(generatedStreet.map((point) => `${point.x},${point.z}`));
+
+      expect(system.getEnemies()).toHaveLength(3);
+      expect(added).toHaveLength(2);
+      for (const enemy of added) {
+        expect(authored.has(`${enemy.mesh.position.x},${enemy.mesh.position.z}`)).toBe(true);
+      }
+    } finally {
+      system.dispose();
+    }
+  });
+
+  test("recycles contacts left behind by streaming into generated streets ahead", () => {
+    const scene = new THREE.Scene();
+    const system = createEnemySystem(scene, {
+      count: 1,
+      arenaHalfSize: 100,
+      playerClearRadius: 4,
+      respawn: false,
+      colliders: [],
+      spawnPoints: [new THREE.Vector3(0, 0, -10)],
+      onPlayerDamage: () => {},
+    });
+    const forwardStreet = [new THREE.Vector3(-2, 0, -30), new THREE.Vector3(2, 0, -32)];
+
+    try {
+      const enemy = system.getEnemies()[0]!;
+      enemy.mesh.position.set(75, 0, 75);
+      expect(system.relocateDistantEnemies(50, new THREE.Vector3(), forwardStreet)).toBe(1);
+      expect(
+        forwardStreet.some(
+          (point) => point.x === enemy.mesh.position.x && point.z === enemy.mesh.position.z,
+        ),
+      ).toBe(true);
+      expect(enemy.mesh.position.y).toBe(ENEMY_BODY.groundY);
+    } finally {
+      system.dispose();
+    }
+  });
 });

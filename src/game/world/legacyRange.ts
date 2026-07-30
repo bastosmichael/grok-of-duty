@@ -718,6 +718,9 @@ export function createLegacyRange(scene: THREE.Scene) {
     starGroup: scene.getObjectByName("SkyDome") as THREE.Group | null,
     setLampFactor: (_factor: number) => {},
     interact: (_origin: THREE.Vector3, _direction: THREE.Vector3) => false,
+    getInteractionPrompt: (_origin: THREE.Vector3, _direction: THREE.Vector3) => null,
+    getTraversalDistance: () => 0,
+    getReinforcementSpawnPoints: (_minimumDepth: number) => [] as THREE.Vector3[],
     update: (_dt: number, elapsed: number) => {
       const arr = dustPositions.array as Float32Array;
       for (let i = 0; i < dustPhases.length; i++) {

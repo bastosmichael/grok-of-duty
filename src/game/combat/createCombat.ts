@@ -11,6 +11,7 @@ import {
   type LevelArena,
   type LevelProfile,
 } from "./levels";
+import { createAlleyTraversalThreat } from "./traversal";
 
 const BODY_DAMAGE = 32;
 const HEAD_MULT = 2.15;
@@ -38,6 +39,10 @@ export type CreateCombatOpts = {
   colliders?: Collider[];
   /** Playable road/room candidates supplied by a streaming world. */
   enemySpawnPoints?: readonly THREE.Vector3[];
+  /** Monotonic forward progress through a streamed scenario. */
+  getTraversalDistance?: () => number;
+  /** Fresh generated street positions at or beyond the requested depth. */
+  getReinforcementSpawnPoints?: (minimumDepth: number) => readonly THREE.Vector3[];
 };
 
 export type CombatSystem = {
@@ -63,6 +68,8 @@ export function createCombat(opts: CreateCombatOpts): CombatSystem {
     mode = "alley",
     colliders = [],
     enemySpawnPoints = [],
+    getTraversalDistance = () => 0,
+    getReinforcementSpawnPoints,
   } = opts;
 
   const effects = createEffects(scene);
@@ -92,8 +99,25 @@ export function createCombat(opts: CreateCombatOpts): CombatSystem {
   let levelState: LevelState = "active";
   let transitionTimer = 0;
   let introTimer = 0;
+  let relocationTimer = 0;
   const lastPlayerPosition = new THREE.Vector3();
   let currentProfile: LevelProfile = createLevelProfile(levelNumber, Math.random, mode);
+  let waveBaseFighterCount = currentProfile.fighterCount;
+  let waveBaseConcurrentAttackers = currentProfile.concurrentAttackers;
+  let appliedTraversalBand = 0;
+  if (mode === "alley") {
+    const threat = createAlleyTraversalThreat(
+      getTraversalDistance(),
+      waveBaseFighterCount,
+      waveBaseConcurrentAttackers,
+    );
+    currentProfile = {
+      ...currentProfile,
+      fighterCount: threat.targetFighters,
+      concurrentAttackers: threat.concurrentAttackers,
+    };
+    appliedTraversalBand = threat.band;
+  }
   let currentArena: LevelArena = createLevelArena(
     scene,
     colliders,
@@ -120,7 +144,10 @@ export function createCombat(opts: CreateCombatOpts): CombatSystem {
       respawn: false,
       playerSpawn: playerPosition,
       colliders,
-      spawnPoints: enemySpawnPoints,
+      spawnPoints:
+        mode === "alley" && getReinforcementSpawnPoints
+          ? getReinforcementSpawnPoints(getTraversalDistance() + 8)
+          : enemySpawnPoints,
       onEnemyShot: (origin, end, hit, impactNormal) => {
         effects.spawnTracer(origin, end, hit ? 0xff563c : 0xffb05a);
         effects.spawnMuzzleSmoke(origin, _enemyForward.copy(end).sub(origin).normalize());
@@ -164,6 +191,7 @@ export function createCombat(opts: CreateCombatOpts): CombatSystem {
       hostilesRemaining: Math.max(0, currentProfile.fighterCount - levelKills),
       hostilesTotal: currentProfile.fighterCount,
       levelState,
+      district: mode === "alley" ? appliedTraversalBand + 1 : 1,
     });
   };
 
@@ -174,6 +202,21 @@ export function createCombat(opts: CreateCombatOpts): CombatSystem {
     levelNumber += 1;
     levelKills = 0;
     currentProfile = createLevelProfile(levelNumber, Math.random, mode);
+    waveBaseFighterCount = currentProfile.fighterCount;
+    waveBaseConcurrentAttackers = currentProfile.concurrentAttackers;
+    if (mode === "alley") {
+      const threat = createAlleyTraversalThreat(
+        getTraversalDistance(),
+        waveBaseFighterCount,
+        waveBaseConcurrentAttackers,
+      );
+      currentProfile = {
+        ...currentProfile,
+        fighterCount: threat.targetFighters,
+        concurrentAttackers: threat.concurrentAttackers,
+      };
+      appliedTraversalBand = threat.band;
+    }
     currentArena = createLevelArena(
       scene,
       colliders,
@@ -191,6 +234,40 @@ export function createCombat(opts: CreateCombatOpts): CombatSystem {
   };
 
   const enemyName = (id: number): string => fighterNames.get(id) ?? `Unknown-${id}`;
+
+  const applyTraversalReinforcements = (playerPosition: THREE.Vector3): void => {
+    if (mode !== "alley" || levelState === "cleared") return;
+    const distance = getTraversalDistance();
+    const threat = createAlleyTraversalThreat(
+      distance,
+      waveBaseFighterCount,
+      waveBaseConcurrentAttackers,
+    );
+    if (threat.band <= appliedTraversalBand) return;
+
+    appliedTraversalBand = threat.band;
+    const additionalFighters = Math.max(0, threat.targetFighters - currentProfile.fighterCount);
+    currentProfile = {
+      ...currentProfile,
+      fighterCount: threat.targetFighters,
+      concurrentAttackers: threat.concurrentAttackers,
+    };
+    enemies.setMaxConcurrentAttackers(threat.concurrentAttackers);
+
+    if (additionalFighters > 0) {
+      const generatedSpawns = getReinforcementSpawnPoints?.(distance + 10) ?? enemySpawnPoints;
+      const added = enemies.addEnemies(additionalFighters, playerPosition, generatedSpawns);
+      let ordinal = fighterNames.size + 1;
+      for (const enemy of added) {
+        fighterNames.set(enemy.id, createFighterCallsign(Math.random, ordinal++));
+      }
+      pushKillFeed(
+        `DISTRICT ${threat.district.toString().padStart(2, "0")}  //  +${added.length} CONTACTS`,
+      );
+    }
+
+    publishLevelHud();
+  };
 
   publishLevelHud();
 
@@ -319,6 +396,16 @@ export function createCombat(opts: CreateCombatOpts): CombatSystem {
   const update = (dt: number, playerPos: THREE.Vector3): void => {
     const safeDt = THREE.MathUtils.clamp(dt, 0, 0.05);
     lastPlayerPosition.copy(playerPos);
+    applyTraversalReinforcements(playerPos);
+
+    if (mode === "alley" && getReinforcementSpawnPoints) {
+      relocationTimer -= safeDt;
+      if (relocationTimer <= 0) {
+        relocationTimer = 1.25;
+        const distance = getTraversalDistance();
+        enemies.relocateDistantEnemies(95, playerPos, getReinforcementSpawnPoints(distance + 10));
+      }
+    }
 
     if (levelState === "cleared") {
       // Allow the final grounded collapse to finish before rebuilding the

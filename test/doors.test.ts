@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import {
   createInteractiveDoor,
+  getDoorInteractionPrompt,
   interactWithNearestDoor,
   updateInteractiveDoor,
 } from "../src/game/world/doors";
@@ -22,8 +23,10 @@ describe("interactive city doors", () => {
     const origin = new THREE.Vector3(0, 1.5, 0);
     const direction = new THREE.Vector3(0, 0, -1);
 
+    expect(getDoorInteractionPrompt([door], origin, direction)).toBe("Open door");
     expect(interactWithNearestDoor([door], origin, direction)).toBe(true);
     expect(door.targetOpen).toBe(true);
+    expect(getDoorInteractionPrompt([door], origin, direction)).toBe("Close door");
     const closedCollider = door.collider.max.x - door.collider.min.x;
     updateInteractiveDoor(door, 1);
     expect(door.pivot.rotation.y).toBeCloseTo(Math.PI / 2, 3);
@@ -31,6 +34,7 @@ describe("interactive city doors", () => {
 
     expect(interactWithNearestDoor([door], origin, direction)).toBe(true);
     expect(door.targetOpen).toBe(false);
+    expect(getDoorInteractionPrompt([door], origin, direction)).toBe("Open door");
     updateInteractiveDoor(door, 1);
     expect(door.pivot.rotation.y).toBeCloseTo(0, 3);
 
@@ -54,6 +58,9 @@ describe("interactive city doors", () => {
       interactWithNearestDoor([door], new THREE.Vector3(0, 1.5, 0), new THREE.Vector3(0, 0, -1)),
     ).toBe(false);
     expect(door.targetOpen).toBe(false);
+    expect(
+      getDoorInteractionPrompt([door], new THREE.Vector3(0, 1.5, 0), new THREE.Vector3(0, 0, -1)),
+    ).toBeNull();
 
     material.dispose();
   });

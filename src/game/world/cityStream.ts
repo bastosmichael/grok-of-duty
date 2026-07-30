@@ -13,6 +13,7 @@ import {
 } from "./props";
 import {
   createInteractiveDoor,
+  getDoorInteractionPrompt,
   interactWithNearestDoor,
   type InteractiveDoor,
   updateInteractiveDoor,
@@ -36,6 +37,9 @@ export type CityStreamApi = {
   starGroup: THREE.Group | null;
   update: (dt: number, elapsed: number, playerPos: THREE.Vector3) => void;
   interact: (origin: THREE.Vector3, direction: THREE.Vector3) => boolean;
+  getInteractionPrompt: (origin: THREE.Vector3, direction: THREE.Vector3) => string | null;
+  getTraversalDistance: () => number;
+  getReinforcementSpawnPoints: (minimumDepth: number) => readonly THREE.Vector3[];
   dispose: () => void;
 };
 
@@ -44,6 +48,12 @@ type JunctionKind = "straight" | "left" | "right" | "t" | "cross" | "end_with_lo
 type HorizonSeal = {
   group: THREE.Group;
   colliders: Collider[];
+};
+
+type EnemySpawnRecord = {
+  position: THREE.Vector3;
+  pathDepth: number;
+  segmentId: string;
 };
 
 type Segment = {
@@ -652,6 +662,8 @@ export function createCityStream(
   const mats = createWorldMaterials();
   const colliders: Collider[] = [];
   const enemySpawnPoints: THREE.Vector3[] = [];
+  const enemySpawnRecords: EnemySpawnRecord[] = [];
+  const reinforcementSpawnScratch: THREE.Vector3[] = [];
   const segments = new Map<string, Segment>();
   const root = new THREE.Group();
   root.name = "CityStream";
@@ -661,16 +673,25 @@ export function createCityStream(
   scene.add(sky.group);
 
   let idCounter = 1;
+  let traversalDistance = 0;
+  let currentSegmentId: string | null = null;
   const nextId = () => `s${idCounter++}`;
 
   const rebuildColliders = (): void => {
     colliders.length = 0;
     enemySpawnPoints.length = 0;
+    enemySpawnRecords.length = 0;
     for (const segment of segments.values()) {
       colliders.push(...segment.colliders);
       for (let z = 6; z <= segment.length - 4; z += 4.5) {
         for (const x of [-segment.width * 0.24, 0, segment.width * 0.24]) {
-          enemySpawnPoints.push(localToWorld(segment.origin, segment.yaw, x, 0, z));
+          const position = localToWorld(segment.origin, segment.yaw, x, 0, z);
+          enemySpawnPoints.push(position);
+          enemySpawnRecords.push({
+            position,
+            pathDepth: segment.pathDist + z,
+            segmentId: segment.id,
+          });
         }
       }
     }
@@ -835,6 +856,7 @@ export function createCityStream(
       }
     }
     if (!nearest) return;
+    currentSegmentId = nearest.id;
 
     // Expand if player is past 55% of nearest segment
     const localZ =
@@ -852,6 +874,10 @@ export function createCityStream(
     const dx = playerPos.x - nearest.origin.x;
     const dz = playerPos.z - nearest.origin.z;
     const lz = s * dx + c * dz;
+    traversalDistance = Math.max(
+      traversalDistance,
+      nearest.pathDist + THREE.MathUtils.clamp(lz, 0, nearest.length),
+    );
 
     if (lz > nearest.length * 0.5 || !nearest.expanded) {
       expandFrom(nearest);
@@ -957,12 +983,54 @@ export function createCityStream(
     }
   };
 
+  function* activeDoors(): Generator<InteractiveDoor> {
+    for (const segment of segments.values()) {
+      yield* segment.doors;
+    }
+  }
+
   const interact = (origin: THREE.Vector3, direction: THREE.Vector3): boolean =>
-    interactWithNearestDoor(
-      [...segments.values()].flatMap((segment) => segment.doors),
-      origin,
-      direction,
-    );
+    interactWithNearestDoor(activeDoors(), origin, direction);
+
+  const getInteractionPrompt = (origin: THREE.Vector3, direction: THREE.Vector3): string | null =>
+    getDoorInteractionPrompt(activeDoors(), origin, direction);
+
+  const getReinforcementSpawnPoints = (minimumDepth: number): readonly THREE.Vector3[] => {
+    reinforcementSpawnScratch.length = 0;
+    const safeMinimum = Number.isFinite(minimumDepth) ? Math.max(0, minimumDepth) : 0;
+    const maximumDepth = safeMinimum + STREAM_AHEAD;
+    const forwardSegmentIds = new Set<string>();
+    const pendingSegmentIds = currentSegmentId ? [currentSegmentId] : [];
+    while (pendingSegmentIds.length > 0) {
+      const segmentId = pendingSegmentIds.pop()!;
+      if (forwardSegmentIds.has(segmentId)) continue;
+      forwardSegmentIds.add(segmentId);
+      const segment = segments.get(segmentId);
+      if (segment) pendingSegmentIds.push(...segment.nextIds);
+    }
+    const isForwardSegment = (record: EnemySpawnRecord): boolean =>
+      forwardSegmentIds.size === 0 || forwardSegmentIds.has(record.segmentId);
+
+    for (const record of enemySpawnRecords) {
+      if (
+        isForwardSegment(record) &&
+        record.pathDepth >= safeMinimum &&
+        record.pathDepth <= maximumDepth
+      ) {
+        reinforcementSpawnScratch.push(record.position);
+      }
+    }
+
+    if (reinforcementSpawnScratch.length === 0) {
+      for (const record of enemySpawnRecords) {
+        if (isForwardSegment(record) && record.pathDepth >= Math.max(0, safeMinimum - 30)) {
+          reinforcementSpawnScratch.push(record.position);
+        }
+      }
+    }
+
+    return reinforcementSpawnScratch.length > 0 ? reinforcementSpawnScratch : enemySpawnPoints;
+  };
 
   const setLampFactor = (factor: number): void => {
     lampFactor = factor;
@@ -977,6 +1045,8 @@ export function createCityStream(
     }
     segments.clear();
     colliders.length = 0;
+    enemySpawnPoints.length = 0;
+    enemySpawnRecords.length = 0;
     scene.remove(root);
     scene.remove(sky.group);
     disposeObject(sky.group);
@@ -991,6 +1061,9 @@ export function createCityStream(
     starGroup: sky.group,
     update,
     interact,
+    getInteractionPrompt,
+    getTraversalDistance: () => traversalDistance,
+    getReinforcementSpawnPoints,
     dispose,
   };
 }

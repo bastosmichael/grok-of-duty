@@ -89,6 +89,20 @@ export type EnemySystem = {
     hitDir?: THREE.Vector3,
     isHeadshot?: boolean,
   ) => { killed: boolean; headshot: boolean };
+  /** Add a fresh generated patrol to the existing streamed encounter. */
+  addEnemies: (
+    count: number,
+    playerPosition: THREE.Vector3,
+    spawnPoints?: readonly THREE.Vector3[],
+  ) => readonly Enemy[];
+  /** Raise or lower the rotating set of operators allowed to fire. */
+  setMaxConcurrentAttackers: (count: number) => void;
+  /** Move contacts left behind by world streaming into generated streets ahead. */
+  relocateDistantEnemies: (
+    maxDistance: number,
+    playerPosition: THREE.Vector3,
+    spawnPoints?: readonly THREE.Vector3[],
+  ) => number;
   getEnemies: () => readonly Enemy[];
   dispose: () => void;
 };
@@ -298,15 +312,15 @@ function respawnEnemy(
  * hit flash + knockback, collapse death, delayed respawn.
  */
 export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): EnemySystem {
-  const count = opts.count ?? SPAWN_COUNT;
+  const initialCount = opts.count ?? SPAWN_COUNT;
   const baseHp = opts.baseHp ?? DEFAULT_HP;
   const baseSpeed = opts.baseSpeed ?? DEFAULT_SPEED;
   const damageScale = opts.damageScale ?? 1;
   const fireCooldownScale = opts.fireCooldownScale ?? 1;
   const accuracyBase = opts.accuracy ?? 0.7;
-  const maxConcurrentAttackers = Math.max(
+  let maxConcurrentAttackers = Math.max(
     1,
-    Math.min(count, Math.floor(opts.maxConcurrentAttackers ?? Math.ceil(count / 3))),
+    Math.min(initialCount, Math.floor(opts.maxConcurrentAttackers ?? Math.ceil(initialCount / 3))),
   );
   const arenaHalfSize = opts.arenaHalfSize ?? ENEMY_BODY.mapHalf;
   const playerClearRadius = opts.playerClearRadius ?? PLAYER_SPAWN_CLEAR;
@@ -317,25 +331,37 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
   const enemies: EnemyRuntime[] = [];
   const byId = new Map<number, EnemyRuntime>();
 
-  for (let i = 0; i < count; i++) {
-    const occupied = enemies.map((enemy) => enemy.mesh.position);
-    const e = createEnemyRuntime(
-      scene,
-      playerSpawn,
-      colliders,
-      occupied,
-      baseHp,
-      baseSpeed,
-      playerClearRadius,
-      arenaHalfSize,
-      spawnPoints,
-    );
-    // Once a wave goes active, contacts have time to move and shoulder their
-    // rifles before the first shot instead of dealing frame-one damage.
-    e.attackCooldown = (0.85 + Math.random() * 0.55) * fireCooldownScale;
-    enemies.push(e);
-    byId.set(e.id, e);
-  }
+  const addEnemies = (
+    requestedCount: number,
+    spawnOrigin: THREE.Vector3,
+    generatedSpawnPoints: readonly THREE.Vector3[] = spawnPoints,
+  ): readonly Enemy[] => {
+    const added: EnemyRuntime[] = [];
+    const safeCount = Math.max(0, Math.floor(requestedCount));
+    for (let i = 0; i < safeCount; i++) {
+      const occupied = enemies.map((enemy) => enemy.mesh.position);
+      const enemy = createEnemyRuntime(
+        scene,
+        spawnOrigin,
+        colliders,
+        occupied,
+        baseHp,
+        baseSpeed,
+        playerClearRadius,
+        arenaHalfSize,
+        generatedSpawnPoints,
+      );
+      // Generated patrols have time to shoulder their rifles before joining
+      // the rotating live-fire set.
+      enemy.attackCooldown = (0.85 + Math.random() * 0.55) * fireCooldownScale;
+      enemies.push(enemy);
+      byId.set(enemy.id, enemy);
+      added.push(enemy);
+    }
+    return added;
+  };
+
+  addEnemies(initialCount, playerSpawn);
 
   const raycastList: THREE.Object3D[] = [];
   const activeBodies: GroundedBody[] = [];
@@ -513,7 +539,8 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
         dist <= FIRE_MAX_RANGE &&
         e.attackCooldown <= 0 &&
         e.staggerTimer <= 0 &&
-        (e.id + Math.floor(combatTime * 0.48)) % count < maxConcurrentAttackers
+        (e.id + Math.floor(combatTime * 0.48)) % Math.max(1, enemies.length) <
+          maxConcurrentAttackers
       ) {
         e.model.rig.muzzle.getWorldPosition(_fromPos);
         _shotDir.set(playerPos.x, playerPos.y + 1.22, playerPos.z).sub(_fromPos);
@@ -630,6 +657,46 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
     return { killed: false, headshot: isHeadshot };
   };
 
+  const setMaxConcurrentAttackers = (count: number): void => {
+    maxConcurrentAttackers = Math.max(1, Math.min(enemies.length, Math.floor(count)));
+  };
+
+  const relocateDistantEnemies = (
+    maxDistance: number,
+    currentPlayerPosition: THREE.Vector3,
+    generatedSpawnPoints: readonly THREE.Vector3[] = spawnPoints,
+  ): number => {
+    const maxDistanceSq = Math.max(1, maxDistance) ** 2;
+    let relocated = 0;
+
+    for (const enemy of enemies) {
+      if (
+        !enemy.alive ||
+        enemy.mesh.position.distanceToSquared(currentPlayerPosition) <= maxDistanceSq
+      ) {
+        continue;
+      }
+      occupiedPositions.length = 0;
+      for (const other of enemies) {
+        if (other !== enemy && other.alive) occupiedPositions.push(other.mesh.position);
+      }
+      const remainingHp = enemy.hp;
+      respawnEnemy(
+        enemy,
+        currentPlayerPosition,
+        colliders,
+        occupiedPositions,
+        playerClearRadius,
+        arenaHalfSize,
+        generatedSpawnPoints,
+      );
+      enemy.hp = Math.min(remainingHp, enemy.maxHp);
+      relocated += 1;
+    }
+
+    return relocated;
+  };
+
   const dispose = (): void => {
     for (const e of enemies) {
       e.model.dispose();
@@ -643,6 +710,9 @@ export function createEnemySystem(scene: THREE.Scene, opts: EnemySystemOpts): En
     raycastTargets,
     getEnemyFromObject,
     applyDamage,
+    addEnemies,
+    setMaxConcurrentAttackers,
+    relocateDistantEnemies,
     getEnemies: () => enemies,
     dispose,
   };

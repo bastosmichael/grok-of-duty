@@ -90,7 +90,6 @@ export function createLevelProfile(
 ): LevelProfile {
   const safeLevel = Math.max(1, Math.floor(level));
   const tier = safeLevel - 1;
-  const sizeJitter = random() * 1.6;
   // Raw squad size already adds substantial pressure, so the remaining combat
   // stats rise in small training-grade steps instead of spiking every round.
   const durabilityBand = Math.floor(tier / 5);
@@ -103,8 +102,9 @@ export function createLevelProfile(
     // A visible patrol occupies the wider streets from the start. More contacts
     // join each level, while capped fire lanes keep the learning curve gentle.
     fighterCount: Math.min(30, 6 + tier * 2),
-    // Large half-size so enemies can pursue along streaming streets (no boxed arena).
-    arenaHalfSize: Math.min(120, 48 + tier * 1.2 + sizeJitter),
+    // The city is streamed around the player, so hostile grounding must not
+    // clamp operators back to the original block as traversal continues.
+    arenaHalfSize: 4096,
     coverCount: Math.min(10, 1 + Math.floor(tier / 4)),
     enemyHp: Math.min(72, 48 + durabilityBand * 2),
     enemySpeed: Math.min(3.25, 2.55 + tier * 0.02),
